@@ -1,0 +1,37 @@
+<div align="center">
+
+# VideoLingo-Freelancer
+
+Traduction vidéo locale, production de sous-titres et doublage
+
+[English](../README.md)｜[简体中文](README.zh.md)｜[Español](README.es.md)｜[Русский](README.ru.md)｜**Français**｜[Deutsch](README.de.md)｜[Italiano](README.it.md)｜[日本語](README.ja.md)
+
+</div>
+
+## Présentation
+
+VideoLingo-Freelancer est une distribution personnalisée de [Huanshere/VideoLingo](https://github.com/Huanshere/VideoLingo), destinée aux indépendants et aux créateurs. Elle regroupe ASR local, traduction à deux modèles, contrôle des sous-titres, formats paysage et vertical, reprise des tâches, historique et doublage dans Streamlit.
+
+## Fonctionnalités
+
+- MLX Whisper sur Apple Silicon et WhisperX / faster-whisper sur les autres systèmes compatibles.
+- Huit langues d’interface avec repli automatique vers l’anglais.
+- Sous-titres bilingues pour les vidéos paysage et verticales 9:16, filigrane personnalisable.
+- Pause, reprise, récupération après erreur et remontage des projets archivés.
+- Identifiants dans les variables d’environnement ou `.streamlit/secrets.toml`, hors de Git.
+
+## Installation
+
+```bash
+git clone https://github.com/jcxl8/VideoLingo-freelancer.git
+cd VideoLingo-freelancer
+python3.12 -m venv .venv
+source .venv/bin/activate
+python install.py
+```
+
+Consultez le [README anglais](../README.md) pour la configuration complète, les limites et la validation.
+
+## Licence
+
+Apache License 2.0. L’attribution à VideoLingo est conservée ; ce dépôt n’est pas une version officielle du projet amont.
