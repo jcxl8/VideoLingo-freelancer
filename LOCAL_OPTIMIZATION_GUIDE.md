@@ -1,42 +1,42 @@
-# VideoLingo 本地双模型优化迁移指南
+# VideoLingo Local Dual-Model Optimization and Migration Guide
 
-本文档用于在其他电脑上复现本机 VideoLingo 的本地化优化流程。目标是把 VideoLingo 改造成适合“本地翻译模型 + 工作流大语言模型”的视频译制工作台。
+This guide explains how to reproduce the customized local VideoLingo workflow on another computer. The goal is to turn VideoLingo into a video-localization workstation that combines a local translation model with a workflow-oriented large language model.
 
-## 目标
+## Goals
 
-- 使用本地翻译模型接口负责字幕翻译，例如 Hy-MT、TranslateGemma、llama.cpp server、LM Studio 或 Ollama 兼容接口。
-- 使用工作流大语言模型负责摘要、术语抽取、反思润色、歧义核查、字幕质量审校、上传标题和简介生成。
-- 保留人工核查闭环：字幕生成后先显示歧义报告，确认后再合并视频。
-- 支持手动合并字幕和视频、字幕样式预览、合并后视频预览、历史项目归档。
-- 提升可维护性：拆分 GUI、任务状态、模型路由、上传文案模块。
+- Use a local translation-model endpoint for subtitle translation, such as Hy-MT, TranslateGemma, a llama.cpp server, LM Studio, or an Ollama-compatible endpoint.
+- Use a workflow LLM for summaries, terminology extraction, translation reflection and refinement, ambiguity checks, subtitle quality review, and upload title and description generation.
+- Preserve a human-review loop: show the ambiguity report after subtitle generation and merge the video only after confirmation.
+- Support manual subtitle and video merging, subtitle-style previews, merged-video previews, and project-history archiving.
+- Improve maintainability by separating the GUI, task state, model routing, and upload-copy modules.
 
-## 适用环境
+## Supported Environments
 
-- macOS 或 Linux。
-- Python 环境已能运行 VideoLingo。
-- 已有本地或远程 OpenAI-compatible API：
-  - 工作流模型：支持 JSON 输出更好。
-  - 翻译模型：可以是本机 `http://127.0.0.1:xxxx/v1`。
-- 已安装 FFmpeg。
-- 如使用 WhisperX 本地模式，需确认对应模型和依赖可用。
+- macOS or Linux.
+- A Python environment capable of running VideoLingo.
+- A local or remote OpenAI-compatible API:
+  - Workflow model: JSON output support is preferred.
+  - Translation model: this may be a local endpoint such as `http://127.0.0.1:xxxx/v1`.
+- FFmpeg installed.
+- When using local WhisperX, confirm that the required model and dependencies are available.
 
-## 不要迁移的内容
+## Content That Must Not Be Migrated
 
-不要直接复制以下敏感或机器相关内容：
+Do not directly copy the following sensitive or machine-specific content:
 
-- `config.yaml` 里的真实 API 密钥。
-- YouTube cookies 文件路径。
-- `config_history.json`。
-- `output/`、`history/`、`_model_cache/`。
-- `streamlit.log`、`streamlit.pid`。
+- Real API keys stored in `config.yaml`.
+- YouTube cookie file paths.
+- `config_history.json`.
+- `output/`, `history/`, or `_model_cache/`.
+- `streamlit.log` or `streamlit.pid`.
 
-迁移到新电脑后，应在 GUI 里重新填写 API 密钥、BASE_URL、模型名和 cookies。
+After migration, enter the API keys, `BASE_URL`, model names, and cookie settings again through the GUI.
 
-## 推荐迁移方式
+## Recommended Migration Methods
 
-### 方式 A：复制已优化文件
+### Method A: Copy the Optimized Files
 
-从已优化电脑复制以下文件到新电脑同名位置：
+Copy the following files from the optimized computer to the same locations on the new computer:
 
 ```text
 st.py
@@ -56,106 +56,106 @@ scripts/validate_local.py
 scripts/run_regression_checks.py
 ```
 
-如果新电脑是干净上游 VideoLingo，建议先备份原文件再覆盖。
+If the new computer contains a clean upstream VideoLingo checkout, back up the original files before replacing them.
 
-### 方式 B：让 Codex 按本指南重新实施
+### Method B: Ask Codex to Reimplement the Guide
 
-把本文档交给 Codex，并要求按“实施步骤”逐步修改和验证。适合不同版本 VideoLingo，能减少直接覆盖造成的冲突。
+Give this guide to Codex and ask it to apply and verify each implementation step. This approach is better suited to different VideoLingo versions and reduces conflicts caused by blindly replacing files.
 
-## 实施步骤
+## Implementation Steps
 
-### 1. 建立验证脚本
+### 1. Add Validation Scripts
 
-新增：
+Add:
 
 ```text
 scripts/validate_local.py
 scripts/run_regression_checks.py
 ```
 
-验证脚本应至少检查：
+At minimum, the validation scripts should confirm that:
 
-- 关键 Python 文件能编译。
-- `translations/en.json` 和 `translations/zh-CN.json` 是合法 JSON。
-- 短字幕碎片合并规则正常。
-- 中英文/缩写间空格正常，例如 `工作流模型 API 密钥有效`。
-- 异常长 `Thank you` 时间戳能被修剪，不再拖长整条字幕。
+- Critical Python files compile.
+- `translations/en.json` and `translations/zh-CN.json` contain valid JSON.
+- Short subtitle-fragment merging behaves correctly.
+- Spacing between Chinese and English text or abbreviations is correct, for example `工作流模型 API 密钥有效`.
+- Abnormally long `Thank you` timestamps are trimmed instead of extending the entire subtitle.
 
-运行：
+Run:
 
 ```bash
 python scripts/validate_local.py
 python scripts/run_regression_checks.py
 ```
 
-### 2. 拆分上传文案模块
+### 2. Separate the Upload-Copy Module
 
-新增：
+Add:
 
 ```text
 core/st_utils/upload_copy.py
 ```
 
-功能：
+Responsibilities:
 
-- 自动读取最新双语字幕文件：
+- Automatically read the latest bilingual subtitle file:
   - `*_trans_src.srt`
   - `*_src_trans.srt`
-- 以最新双语字幕为主要依据。
-- 原视频标题和视频简介只作为辅助背景。
-- 生成中文-only 上传文案：
-  - 原标题
-  - 原简介
-  - 10 个中文标题候选
-  - 10 个中文简介候选
-- 中文标题约 15 个汉字。
-- 中文简介约 100 个汉字。
-- 缓存需绑定字幕内容 hash，字幕更新后自动失效。
+- Use the latest bilingual subtitles as the primary source.
+- Treat the original video title and description only as supporting context.
+- Generate Chinese-only upload copy containing:
+  - The original title.
+  - The original description.
+  - Ten Chinese title candidates.
+  - Ten Chinese description candidates.
+- Keep Chinese titles at approximately 15 Chinese characters.
+- Keep Chinese descriptions at approximately 100 Chinese characters.
+- Bind the cache to a hash of the subtitle content so it is invalidated automatically after subtitle changes.
 
-在 `st.py` 中只保留调用：
+Keep only this import in `st.py`:
 
 ```python
 from core.st_utils.upload_copy import render_upload_copy_suggestions
 ```
 
-并在字幕生成完成或合并完成后调用：
+Call it after subtitle generation or video merging:
 
 ```python
 render_upload_copy_suggestions(_is_task_running)
 ```
 
-### 3. 拆分任务状态模块
+### 3. Separate the Task-State Module
 
-新增：
+Add:
 
 ```text
 core/st_utils/task_state.py
 ```
 
-负责：
+It is responsible for:
 
 - `output/.videolingo_task.lock`
 - `output/.videolingo_task_status.json`
-- 判断任务是否仍在运行。
-- 页面刷新或 Streamlit rerun 后自动解锁。
-- 失败、终止、完成状态读写。
+- Determining whether a task is still running.
+- Unlocking automatically after a page refresh or interrupted Streamlit rerun.
+- Reading and writing failed, stopped, and completed states.
 
-`st.py` 中保留进度 UI 和任务保护逻辑，但底层读写应调用 `task_state.py`。
+Keep the progress UI and task-guard logic in `st.py`, but move the underlying state operations into `task_state.py`.
 
-### 4. 抽象双模型路由
+### 4. Introduce Dual-Model Routing
 
-新增：
+Add:
 
 ```text
 core/utils/model_router.py
 ```
 
-模型角色：
+Model roles:
 
-- `workflow`：摘要、术语、JSON 流程、反思、歧义、上传文案。
-- `translator`：纯文本字幕翻译。
+- `workflow`: summaries, terminology, structured JSON workflows, reflection, ambiguity review, and upload copy.
+- `translator`: plain-text subtitle translation.
 
-配置来源：
+Configuration source:
 
 ```yaml
 api:
@@ -173,77 +173,77 @@ translator_api:
   max_tokens: 256
 ```
 
-`core/utils/ask_gpt.py` 应继续暴露原接口：
+`core/utils/ask_gpt.py` should continue to expose the original API:
 
 ```python
 ask_gpt(prompt, resp_type=None, valid_def=None, log_title="default", api_role="workflow")
 list_available_models(api_role="workflow")
 ```
 
-但内部通过 `ModelRouter` 路由到工作流模型或翻译模型。
+Internally, however, it should route requests to the workflow or translation model through `ModelRouter`.
 
-### 5. 增加本地翻译结果润色开关
+### 5. Add a Local-Translation Refinement Toggle
 
-在 `config.yaml` 中新增：
+Add this setting to `config.yaml`:
 
 ```yaml
 translator_refine_with_workflow: true
 ```
 
-在 GUI 的翻译模型设置区域新增开关：
+Add a toggle to the translation-model section of the GUI:
 
 ```text
-润色本地翻译结果
+Refine local translation results
 ```
 
-逻辑：
+Behavior:
 
-- 开启：本地翻译模型先翻译，工作流大模型再反思润色。
-- 关闭：本地翻译模型直接输出，最多做歧义核查。
-- 工作流润色失败时，不应中断整个任务，应退回本地翻译结果。
+- Enabled: the local translation model translates first, then the workflow LLM reflects on and refines the result.
+- Disabled: use the local translation-model output directly, with an optional ambiguity check only.
+- If workflow refinement fails, do not stop the entire task; fall back to the local translation result.
 
-### 6. 保留并加强字幕质量规则
+### 6. Preserve and Strengthen Subtitle-Quality Rules
 
-重点规则：
+Important rules:
 
-- 少于 10 个英文词的短句原则上不切分。
-- 合并过短英文碎片，避免一句话被切得太碎。
-- 去除明显语气词，如 `um`、`uh`。
-- 修复常见大小写和规范写法，例如：
-  - 主语 `I`
-  - `iPhone`
-  - `AI`、`NBA`、`DNA`、`MBA`
-- 中文和英文/缩写/数字之间保留空格，例如：
+- As a general rule, do not split short English sentences containing fewer than ten words.
+- Merge English fragments that are too short so a sentence is not divided excessively.
+- Remove obvious filler words such as `um` and `uh`.
+- Correct common capitalization and standard spellings, including:
+  - The pronoun `I`.
+  - `iPhone`.
+  - `AI`, `NBA`, `DNA`, and `MBA`.
+- Preserve spaces between Chinese text and English words, abbreviations, or numbers, for example:
   - `工作流模型 API 密钥有效`
   - `iPhone 手机`
   - `AI 技术`
-- 检测并修剪异常长的词级时间戳，尤其是 WhisperX 幻觉或错位造成的 `Thank you`。
+- Detect and trim abnormally long word-level timestamps, especially `Thank you` segments caused by WhisperX hallucinations or misalignment.
 
-建议保留或新增：
+Keep or add:
 
 ```text
 core/spacy_utils/merge_short_segments.py
 core/utils/text_normalize.py
 ```
 
-### 7. 优化缓存和配置读取
+### 7. Optimize Caching and Configuration Reads
 
-`core/utils/config_utils.py`：
+In `core/utils/config_utils.py`:
 
-- 对 `config.yaml` 做按 mtime 的内存缓存。
-- GUI 更新配置后主动失效缓存。
+- Cache `config.yaml` in memory based on its modification time.
+- Explicitly invalidate the cache after the GUI updates a setting.
 
-`core/utils/ask_gpt.py`：
+In `core/utils/ask_gpt.py`:
 
-- GPT 日志写入使用临时文件 + `os.replace` 原子替换。
-- 读取损坏日志时回退为空列表。
-- 缓存 key 应区分 `api_role`，避免工作流模型和翻译模型串缓存。
+- Write GPT logs through a temporary file followed by an atomic `os.replace`.
+- Fall back to an empty list when a damaged log cannot be read.
+- Include `api_role` in cache keys so workflow and translation models never share cached results accidentally.
 
-### 8. 增加 History manifest
+### 8. Add a History Manifest
 
-在归档函数中新增 `manifest.json`。
+Create `manifest.json` during project archiving.
 
-建议内容：
+Recommended content:
 
 ```json
 {
@@ -274,11 +274,11 @@ core/utils/text_normalize.py
 }
 ```
 
-不要写入 API key。
+Do not include API keys.
 
-### 9. 更新 `.gitignore`
+### 9. Update `.gitignore`
 
-确认忽略：
+Confirm that the following are ignored:
 
 ```gitignore
 /output/
@@ -294,11 +294,11 @@ __pycache__/
 *.py[cod]
 ```
 
-## 推荐配置
+## Recommended Configuration
 
-### 本机翻译模型
+### Local Translation Model
 
-如果翻译模型是本机 llama.cpp / LM Studio / Ollama 兼容 OpenAI API：
+If the translation model is exposed through a local llama.cpp, LM Studio, or Ollama OpenAI-compatible API:
 
 ```yaml
 translator_api:
@@ -311,15 +311,15 @@ translator_api:
 translation_max_workers: 4
 ```
 
-如果本地模型容易阻塞或报错，可把并发降为：
+If the local model blocks or fails under concurrency, reduce the worker count:
 
 ```yaml
 translation_max_workers: 1
 ```
 
-### 工作流模型
+### Workflow Model
 
-工作流模型建议使用支持 JSON 的远程或本地大模型：
+Use a local or remote model with reliable JSON support as the workflow model:
 
 ```yaml
 api:
@@ -329,9 +329,9 @@ api:
   llm_support_json: true
 ```
 
-## 验证清单
+## Verification Checklist
 
-每次迁移后执行：
+Run the following after every migration:
 
 ```bash
 python scripts/validate_local.py
@@ -339,64 +339,64 @@ python scripts/run_regression_checks.py
 streamlit run st.py
 ```
 
-在 GUI 中确认：
+Confirm in the GUI that:
 
-- 页面无 `Traceback`。
-- LLM 配置能显示工作流模型和翻译模型。
-- 能看到 `润色本地翻译结果` 开关。
-- 字幕生成完成后能看到歧义核查报告。
-- 核查确认后能继续合并视频。
-- 合并后能看到视频预览。
-- 能看到上传文案建议。
+- The page contains no `Traceback`.
+- The LLM configuration displays both the workflow model and the translation model.
+- The `Refine local translation results` toggle is visible.
+- The ambiguity-review report appears after subtitle generation.
+- Video merging can continue after the review is confirmed.
+- The merged-video preview is displayed.
+- Upload-copy suggestions are available.
 
-## 常见问题
+## Troubleshooting
 
-### 页面提示已有任务运行，但终端没有日志
+### The Page Says a Task Is Already Running, but the Terminal Has No Logs
 
-检查：
+Check:
 
 ```text
 output/.videolingo_task.lock
 output/.videolingo_task_status.json
 ```
 
-优化后的任务状态层应在进程不存在或页面刷新中断后自动解锁，并允许从失败步骤继续。
+The optimized task-state layer should unlock automatically when the process no longer exists or a page refresh interrupted it, then allow processing to continue from the failed step.
 
-### 出现 Too many open files
+### `Too many open files`
 
-优先降低：
+First reduce:
 
 ```yaml
 translation_max_workers: 1
 ```
 
-并确认已使用优化后的：
+Also confirm that the optimized versions of these files are in use:
 
 ```text
 core/utils/ask_gpt.py
 core/utils/config_utils.py
 ```
 
-### 上传文案不是根据最新字幕生成
+### Upload Copy Is Not Based on the Latest Subtitles
 
-确认最新字幕文件存在：
+Confirm that the latest subtitle file exists:
 
 ```text
 *_trans_src.srt
 *_src_trans.srt
 ```
 
-上传文案缓存会绑定字幕 hash。如果字幕已修改但页面仍旧，点击：
+The upload-copy cache is tied to the subtitle hash. If the subtitles have changed but the page still shows old copy, click:
 
 ```text
-重新生成上传文案建议
+Regenerate upload-copy suggestions
 ```
 
-## 最终验收标准
+## Final Acceptance Criteria
 
-- 可以使用本地翻译模型完成字幕初译。
-- 可以使用工作流大模型完成摘要、术语、反思、歧义和上传文案。
-- 字幕生成后先核查，再合并视频。
-- 修改双语字幕后，合并视频使用最新字幕。
-- 历史归档包含 `manifest.json`。
-- 验证脚本全部通过。
+- A local translation model can produce the initial subtitle translation.
+- A workflow LLM can generate summaries, terminology, reflection, ambiguity review, and upload copy.
+- Subtitle review takes place before video merging.
+- After bilingual subtitles are edited, video merging uses the latest subtitle files.
+- History archives contain `manifest.json`.
+- All validation scripts pass.
