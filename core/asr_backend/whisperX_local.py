@@ -2,37 +2,49 @@ import os
 import json
 import warnings
 import time
-import torch
 import functools
 
 warnings.filterwarnings("ignore")
 
-# =============================================================================
-# Compatibility shim — applied BEFORE importing whisperx
-# =============================================================================
-
-# torch.load: default weights_only=False for pyannote checkpoints
-# PyTorch >=2.6 changed torch.load default to weights_only=True.
-# pyannote checkpoints contain omegaconf objects that fail the safety check.
-# Monkey-patch torch.load to default to weights_only=False (matching <2.6
-# behavior).  This is safe here because all model files come from trusted
-# sources (HuggingFace / pyannote).
-_original_torch_load = torch.load
-@functools.wraps(_original_torch_load)
-def _patched_torch_load(*args, **kwargs):
-    if kwargs.get("weights_only") is None:
-        kwargs["weights_only"] = False
-    return _original_torch_load(*args, **kwargs)
-torch.load = _patched_torch_load
-
-# =============================================================================
-# Now safe to import whisperx and the rest of the application
-# =============================================================================
-import whisperx
-from whisperx.audio import load_audio as _whisperx_load_audio, SAMPLE_RATE as _WHISPERX_SR
-from faster_whisper import WhisperModel
 from rich import print as rprint
 from core.utils import *
+
+torch = None
+whisperx = None
+WhisperModel = None
+_whisperx_load_audio = None
+_WHISPERX_SR = 16000
+
+
+def _load_asr_runtime_dependencies():
+    """Load heavyweight ML runtimes only when transcription is requested."""
+    global torch, whisperx, WhisperModel, _whisperx_load_audio, _WHISPERX_SR
+    if torch is not None:
+        return
+
+    import torch as torch_module
+
+    # PyTorch >=2.6 defaults torch.load to weights_only=True. WhisperX's
+    # trusted HuggingFace/pyannote checkpoints still require the old default.
+    original_torch_load = torch_module.load
+
+    @functools.wraps(original_torch_load)
+    def patched_torch_load(*args, **kwargs):
+        if kwargs.get("weights_only") is None:
+            kwargs["weights_only"] = False
+        return original_torch_load(*args, **kwargs)
+
+    torch_module.load = patched_torch_load
+
+    import whisperx as whisperx_module
+    from faster_whisper import WhisperModel as whisper_model_class
+    from whisperx.audio import SAMPLE_RATE, load_audio
+
+    torch = torch_module
+    whisperx = whisperx_module
+    WhisperModel = whisper_model_class
+    _whisperx_load_audio = load_audio
+    _WHISPERX_SR = SAMPLE_RATE
 MODEL_DIR = load_key("model_dir")
 
 WHISPER_MODEL_REPOS = {
@@ -323,6 +335,7 @@ def transcribe_audio(raw_audio_file, vocal_audio_file, start, end):
 
 @except_handler("WhisperX processing error:")
 def transcribe_audio_segments(raw_audio_file, vocal_audio_file, segments):
+    _load_asr_runtime_dependencies()
     os.environ['HF_ENDPOINT'] = check_hf_mirror()
     WHISPER_LANGUAGE = load_key("whisper.language")
     device = "cuda" if torch.cuda.is_available() else "cpu"

@@ -1,7 +1,4 @@
 from core.utils import *
-from core.asr_backend.demucs_vl import demucs_audio
-from core.asr_backend.audio_preprocess import process_transcription, convert_video_to_audio, split_audio, save_results, normalize_audio_volume
-from core._1_ytdlp import find_video_files
 from core.utils.models import *
 
 LOCAL_ASR_SEGMENT_SECONDS = 30
@@ -15,6 +12,16 @@ def resolve_asr_runtime(value):
 
 @check_file_exists(_2_CLEANED_CHUNKS)
 def transcribe():
+    from core._1_ytdlp import find_video_files
+    from core.asr_backend.audio_preprocess import (
+        convert_video_to_audio,
+        normalize_audio_volume,
+        process_transcription,
+        save_results,
+        split_audio,
+    )
+    from core.asr_backend.demucs_vl import demucs_audio
+
     # 1. video to audio
     video_file = find_video_files()
     if not video_file:
