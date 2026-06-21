@@ -7,6 +7,22 @@ LOCALIZED_PAGES = ("zh", "es", "ru", "fr", "de", "it", "ja")
 
 
 class ReadmeNavigationTest(unittest.TestCase):
+    def test_root_readme_recommends_tested_local_translation_model(self):
+        text = ROOT.joinpath("README.md").read_text(encoding="utf-8")
+        required = (
+            "Local Translation Model",
+            "https://huggingface.co/tencent/Hy-MT2-7B",
+            "Mac mini M4",
+            "32 GB",
+            "33 languages",
+            "OpenAI-compatible",
+            "translator_api:",
+            "model: hy-mt2-7b",
+        )
+        for item in required:
+            with self.subTest(item=item):
+                self.assertIn(item, text)
+
     def test_all_readmes_document_uv_python_and_ffmpeg_installation(self):
         pages = [ROOT / "README.md"] + [
             ROOT / "translations" / f"README.{code}.md"

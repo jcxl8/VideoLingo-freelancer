@@ -40,6 +40,24 @@ The Skill does not include this application’s source code, models, or credenti
 | 🗂️ Project history | Archive source videos and subtitles, reopen a project, and re-merge previous results |
 | 🔐 Local secrets | API credentials can stay in environment variables or an ignored Streamlit secrets file |
 
+## 🧠 Local Translation Model
+
+VideoLingo-Freelancer can send subtitle translation to a local **OpenAI-compatible** model endpoint while keeping workflow tasks—such as terminology, reflection, and quality review—on a separate model.
+
+**Maintainer's tested recommendation:** on my **Mac mini M4 with 32 GB of unified memory**, I use and recommend Tencent's [Hy-MT2-7B](https://huggingface.co/tencent/Hy-MT2-7B). Its official model card describes it as a 7B multilingual translation model supporting translation among **33 languages**.
+
+Connect an already running local model server through the translator profile:
+
+```yaml
+translator_api:
+  key: sk-local
+  base_url: http://127.0.0.1:8765/v1
+  model: hy-mt2-7b
+  llm_support_json: false
+```
+
+This is a personal, tested recommendation rather than a universal hardware minimum. Memory use and translation speed depend on the inference backend, model format, context length, and quantization. Follow the model card for supported deployment methods and inference parameters.
+
 ## 🔄 Workflow
 
 ```text
