@@ -319,8 +319,7 @@ def _render_subtitle_outputs_without_video():
     if load_key("enable_upload_copy_suggestions"):
         render_upload_copy_suggestions(_is_task_running)
     if st.button(t("Archive to 'history'"), key="cleanup_after_subtitle_generation"):
-        st.session_state["last_text_archive_dir"] = cleanup()
-        st.rerun()
+        _archive_text_outputs_to_history()
 
 def _render_merged_video_preview(video_path, key_prefix):
     if not video_path or not os.path.exists(video_path):
@@ -477,6 +476,16 @@ def _render_archived_dir_button(session_key):
     if st.button(t("Open Archived Folder"), key=f"open_{session_key}"):
         if not _open_archived_dir(archived_dir):
             st.error(t("Archived folder not found"))
+
+def _text_archive_requested():
+    return bool(
+        st.session_state.get("cleanup_after_subtitle_generation")
+        or st.session_state.get("cleanup_in_text_processing")
+    )
+
+def _archive_text_outputs_to_history():
+    st.session_state["last_text_archive_dir"] = cleanup()
+    st.rerun()
 
 def _render_open_output_button(key):
     if st.button(t("Open Subtitle Folder"), key=key):
@@ -1227,6 +1236,8 @@ def text_processing_section():
         SUBTITLE_PROGRESS_HOST = st.empty()
         _render_subtitle_progress(SUBTITLE_PROGRESS_HOST)
         _render_archived_dir_button("last_text_archive_dir")
+        if _text_archive_requested():
+            _archive_text_outputs_to_history()
 
         sub_video = _find_sub_video()
         if _subtitle_review_pending():
@@ -1301,8 +1312,7 @@ def text_processing_section():
             download_subtitle_zip_button(text=t("Download All Srt Files"))
             
             if st.button(t("Archive to 'history'"), key="cleanup_in_text_processing"):
-                st.session_state["last_text_archive_dir"] = cleanup()
-                st.rerun()
+                _archive_text_outputs_to_history()
             return True
 
 def process_text(progress_host=None, start_step=1):
