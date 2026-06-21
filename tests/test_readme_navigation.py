@@ -7,6 +7,37 @@ LOCALIZED_PAGES = ("zh", "es", "ru", "fr", "de", "it", "ja")
 
 
 class ReadmeNavigationTest(unittest.TestCase):
+    def test_root_readme_documents_project_structure(self):
+        text = ROOT.joinpath("README.md").read_text(encoding="utf-8")
+        start = text.index("## 🗂️ Project Structure")
+        end = text.index("\n## ", start + 4)
+        section = text[start:end]
+
+        required = (
+            "VideoLingo-freelancer/",
+            "st.py",
+            "setup_env.py",
+            "install.py",
+            "core/",
+            "asr_backend/",
+            "tts_backend/",
+            "st_utils/",
+            "scripts/",
+            "tests/",
+            "translations/",
+            "docs/",
+            "batch/",
+            "output/",
+            "history/",
+            "_model_cache/",
+        )
+        for item in required:
+            with self.subTest(item=item):
+                self.assertIn(item, section)
+        self.assertNotIn("config_history.json", section)
+        self.assertLess(text.index("## ⚙️ Configuration"), start)
+        self.assertLess(start, text.index("## ✅ Validation"))
+
     def test_root_readme_recommends_tested_local_translation_model(self):
         text = ROOT.joinpath("README.md").read_text(encoding="utf-8")
         required = (

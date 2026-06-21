@@ -169,6 +169,37 @@ VIDEOLINGO_AZURE_TTS_API_KEY = "your-tts-key"
 
 See [`core/utils/secret_store.py`](core/utils/secret_store.py) for every supported secret name. Model weights and runtime data under `output/`, `history/`, and `_model_cache/` are also excluded from Git.
 
+## 🗂️ Project Structure
+
+```text
+VideoLingo-freelancer/
+├── st.py                       # Streamlit application entrypoint
+├── setup_env.py                # uv + Python 3.12 environment bootstrap
+├── install.py                  # Platform-aware dependency installer
+├── setup.py                    # Python package metadata
+├── config.yaml                 # Public configuration schema and defaults
+├── core/
+│   ├── _1_ytdlp.py ...         # Download, ASR, translation, subtitle, and dubbing stages
+│   ├── asr_backend/             # MLX Whisper and WhisperX implementations
+│   ├── tts_backend/             # Text-to-speech providers
+│   ├── spacy_utils/             # NLP segmentation and source-quality helpers
+│   ├── st_utils/                # UI tasks, history, previews, and recovery
+│   ├── utils/                   # Config, secrets, model routing, and atomic files
+│   ├── subtitle_formats.py      # Subtitle parsing and formatting
+│   ├── subtitle_layout.py       # Portrait and landscape layout resolution
+│   └── subtitle_proofread.py    # Subtitle quality gate
+├── scripts/                     # Validation, migration, and maintenance tools
+├── tests/                       # Unit and regression tests
+├── translations/                # UI catalogs and localized README pages
+├── docs/                        # Logos, dependency policy, and maintenance notes
+├── batch/                       # Batch-processing helpers
+├── requirements.txt             # Cross-platform runtime dependencies
+├── requirements-ci.txt          # Deterministic CI dependencies
+└── constraints-py312.txt        # Python 3.12 dependency snapshot
+```
+
+Runtime directories such as `output/`, `history/`, and `_model_cache/` are created locally as needed. They can contain generated media, project archives, and model weights, so they are excluded from Git.
+
 ## ✅ Validation
 
 ```bash
