@@ -46,6 +46,14 @@ class MultilingualUiTest(unittest.TestCase):
                 "missing-test-key",
             )
 
+    def test_each_selected_language_has_valid_catalog(self):
+        translations.load_translations.cache_clear()
+        for code in EXPECTED_LANGUAGES.values():
+            with self.subTest(code=code):
+                catalog = translations.load_translations(code)
+                self.assertIsInstance(catalog, dict)
+                self.assertTrue(catalog, code)
+
 
 if __name__ == "__main__":
     unittest.main()
