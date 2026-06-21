@@ -1,13 +1,129 @@
 import concurrent.futures
 from difflib import SequenceMatcher
 import math
+import json
+import os
+import re
 from core.prompts import get_split_prompt
 from core.spacy_utils.load_nlp_model import init_nlp
+from core.spacy_utils.source_quality import postprocess_source_segments, write_source_segment_quality_report
 from core.utils import *
 from rich.console import Console
 from rich.table import Table
-from core.utils.models import _3_1_SPLIT_BY_NLP, _3_2_SPLIT_BY_MEANING
+from core.utils.models import _3_1_SPLIT_BY_NLP, _3_2_SPLIT_BY_MEANING, _3_2_SEGMENTATION_REPORT, _3_2_SEGMENTATION_REPORT_MD
 console = Console()
+
+CONTINUATION_START_RE = re.compile(
+    r"^\s*(?:[,.;:!?]+|(?:a|an|the|of|to|in|on|at|by|for|from|with|without|and|or|but|so|as|if|when|while|although|because|that|which|who|where|not|then)\b)",
+    re.I,
+)
+# =========================
+# 数字保护：防止把 "1,500" 这类数字误拆
+# =========================
+
+_NUMBER_COMMA_RE = re.compile(r"(?<=\d),(?=\d)")
+
+def _normalize_numbers_for_counting(text: str) -> str:
+    """将数字中的逗号移除（如 1,500 → 1500），避免被 spaCy 切成多个 token。"""
+    return _NUMBER_COMMA_RE.sub("", str(text))
+
+def _split_breaks_number(split_lines: list) -> bool:
+    """检查拆分后的各行是否切断了数字（如 "almost 1" / "000 robots"）。"""
+    if len(split_lines) < 2:
+        return False
+    for i in range(len(split_lines) - 1):
+        prev_end = split_lines[i].strip()
+        next_start = split_lines[i + 1].strip().lstrip(",.;:!?，。；：！？ ")
+        # 上一行以数字结尾
+        prev_ends_digit = bool(re.search(r"\d\s*$", prev_end))
+        # 下一行以数字（或逗号+数字）开头
+        next_starts_digit = bool(re.match(r"^[,]?\d+", next_start))
+        if prev_ends_digit and next_starts_digit:
+            return True
+    return False
+
+
+
+def _word_count(text):
+    return len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)?", str(text)))
+
+def _edge_token(text, first=False):
+    tokens = re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)?", str(text).lower())
+    if not tokens:
+        return ""
+    return tokens[0] if first else tokens[-1]
+
+def write_segmentation_quality_report(sentences):
+    try:
+        min_words = int(load_key("min_split_source_words"))
+    except Exception:
+        min_words = 10
+    try:
+        max_length = int(load_key("max_split_length"))
+    except Exception:
+        max_length = 20
+
+    items = []
+    for index, sentence in enumerate(sentences):
+        words = _word_count(sentence)
+        if words and words < min_words:
+            items.append({
+                "index": index + 1,
+                "type": "short_segment",
+                "word_count": words,
+                "source": sentence,
+                "reason": f"Segment has fewer than {min_words} English words; check if it was over-split.",
+            })
+        if words > max_length * 1.5:
+            items.append({
+                "index": index + 1,
+                "type": "long_segment",
+                "word_count": words,
+                "source": sentence,
+                "reason": "Segment is much longer than the configured split length.",
+            })
+        if CONTINUATION_START_RE.search(str(sentence)):
+            items.append({
+                "index": index + 1,
+                "type": "continuation_start",
+                "word_count": words,
+                "source": sentence,
+                "reason": "Segment starts with a connector or punctuation; it may belong to the previous segment.",
+            })
+        if index > 0:
+            previous_last = _edge_token(sentences[index - 1])
+            current_first = _edge_token(sentence, first=True)
+            if previous_last and current_first and previous_last == current_first:
+                items.append({
+                    "index": index + 1,
+                    "type": "duplicate_boundary_word",
+                    "word": current_first,
+                    "source": sentence,
+                    "reason": "The previous segment ends with the same word this segment starts with.",
+                })
+
+    for path in (_3_2_SEGMENTATION_REPORT, _3_2_SEGMENTATION_REPORT_MD):
+        if not items and os.path.exists(path):
+            os.remove(path)
+    if not items:
+        return []
+
+    report = {"summary": {"item_count": len(items), "segment_count": len(sentences)}, "items": items}
+    with open(_3_2_SEGMENTATION_REPORT, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+
+    lines = ["# Segmentation Quality Report", "", f"- segment_count: {len(sentences)}", f"- item_count: {len(items)}", ""]
+    for item in items[:120]:
+        lines.extend([
+            f"## {item['index']}. {item['type']}",
+            f"- Source: {item.get('source', '')}",
+            f"- Reason: {item.get('reason', '')}",
+            "",
+        ])
+    with open(_3_2_SEGMENTATION_REPORT_MD, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines).strip() + "\n")
+    console.print(f"[yellow]⚠️ Segmentation quality report saved to {_3_2_SEGMENTATION_REPORT_MD}[/yellow]")
+    return items
 
 def tokenize_sentence(sentence, nlp):
     doc = nlp(sentence)
@@ -88,8 +204,9 @@ def parallel_split_sentences(sentences, max_length, max_workers, nlp, retry_atte
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         for index, sentence in enumerate(sentences):
             # Use tokenizer to split the sentence
-            tokens = tokenize_sentence(sentence, nlp)
-            # print("Tokenization result:", tokens)
+            # 先对数字做归一化（移除数字内逗号），避免 "1,500" 被切成 3 个 token 导致误拆
+            normalized = _normalize_numbers_for_counting(sentence)
+            tokens = tokenize_sentence(normalized, nlp)
             num_parts = math.ceil(len(tokens) / max_length)
             if len(tokens) > max_length:
                 future = executor.submit(split_sentence, sentence, num_parts, max_length, index=index, retry_attempt=retry_attempt)
@@ -101,13 +218,20 @@ def parallel_split_sentences(sentences, max_length, max_workers, nlp, retry_atte
             split_result = future.result()
             if split_result:
                 split_lines = split_result.strip().split('\n')
-                new_sentences[index] = [line.strip() for line in split_lines]
+                # 检查 GPT 是否切断了数字（如 "1,500" 被切成 "1" / "500"）
+                if _split_breaks_number(split_lines):
+                    console.print(
+                        f"[yellow]⚠️ GPT split broke a number in sentence {index}; "
+                        f"keeping original sentence unsplit.[/yellow]"
+                    )
+                    new_sentences[index] = [sentence]
+                else:
+                    new_sentences[index] = [line.strip() for line in split_lines]
             else:
                 new_sentences[index] = [sentence]
 
     return [sentence for sublist in new_sentences for sentence in sublist]
 
-@check_file_exists(_3_2_SPLIT_BY_MEANING)
 def split_sentences_by_meaning():
     """The main function to split sentences by meaning."""
     # read input sentences
@@ -119,9 +243,13 @@ def split_sentences_by_meaning():
     for retry_attempt in range(3):
         sentences = parallel_split_sentences(sentences, max_length=load_key("max_split_length"), max_workers=load_key("max_workers"), nlp=nlp, retry_attempt=retry_attempt)
 
+    sentences, source_quality_items = postprocess_source_segments(sentences)
+    write_source_segment_quality_report(source_quality_items)
+
     # 💾 save results
     with open(_3_2_SPLIT_BY_MEANING, 'w', encoding='utf-8') as f:
         f.write('\n'.join(sentences))
+    write_segmentation_quality_report(sentences)
     console.print('[green]✅ All sentences have been successfully split![/green]')
 
 if __name__ == '__main__':

@@ -1,22 +1,47 @@
 import pandas as pd
 import json
 import concurrent.futures
+import os
 from core.translate_lines import translate_lines
 from core._4_1_summarize import search_things_to_note_in_prompt
-from core._8_1_audio_task import check_len_then_trim
 from core._6_gen_sub import align_timestamp
+from core.spacy_utils.merge_short_segments import merge_lines
+from core.spacy_utils.source_quality import postprocess_source_segments, write_source_segment_quality_report
 from core.utils import *
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from difflib import SequenceMatcher
 from core.utils.models import *
+from core.st_utils.retranslation import (
+    get_current_translation_model,
+    get_current_translation_profile_signature,
+    read_last_translation_profile_signature,
+    write_translation_profile_cache,
+)
 console = Console()
 
+try:
+    from core._8_1_audio_task import check_len_then_trim
+except ModuleNotFoundError:
+    def check_len_then_trim(text, duration):
+        return text
+
 # Function to split text into chunks
+
 def split_chunks_by_chars(chunk_size, max_i): 
     """Split text into chunks based on character count, return a list of multi-line text chunks"""
     with open(_3_2_SPLIT_BY_MEANING, "r", encoding="utf-8") as file:
-        sentences = file.read().strip().split('\n')
+        sentences = [line.strip() for line in file.read().strip().split('\n') if line.strip()]
+    sentences, source_quality_items = postprocess_source_segments(sentences)
+    write_source_segment_quality_report(source_quality_items)
+    if source_quality_items:
+        with open(_3_2_SPLIT_BY_MEANING, "w", encoding="utf-8") as file:
+            file.write("\n".join(sentences))
+    # merge_lines disabled: BATCH_SIZE=1 + per-sentence translation already
+    # produces correct 1:1 alignment. Merging lines here changes source line
+    # count, causing downstream bilingual SRT assembly to pair English and
+    # Chinese entries with mismatched boundaries.
+    # sentences = merge_lines(sentences)
 
     chunks = []
     chunk = ''
@@ -51,9 +76,23 @@ def similar(a, b):
     return SequenceMatcher(None, a, b).ratio()
 
 # 🚀 Main function to translate all chunks
-@check_file_exists(_4_2_TRANSLATION)
 def translate_all():
     console.print("[bold green]Start Translating All...[/bold green]")
+
+    # --- Profile-aware re-translation: skip only if the API profile hasn't changed ---
+    current_model = get_current_translation_model()
+    current_profile = get_current_translation_profile_signature()
+
+    if os.path.exists(_4_2_TRANSLATION):
+        cached_profile = read_last_translation_profile_signature()
+        if cached_profile == current_profile:
+            console.print(f"[yellow]⚠️ Translation results already exist for translation profile '{current_model}', skip re-translation.[/yellow]")
+            return None
+        else:
+            console.print(f"[yellow]⚠️ Translation profile changed, re-translating with '{current_model}'...[/yellow]")
+
+    if os.path.exists(_4_3_AMBIGUITY):
+        os.remove(_4_3_AMBIGUITY)
     chunks = split_chunks_by_chars(chunk_size=600, max_i=10)
     with open(_4_1_TERMINOLOGY, 'r', encoding='utf-8') as file:
         theme_prompt = json.load(file).get('theme')
@@ -61,7 +100,7 @@ def translate_all():
     # 🔄 Use concurrent execution for translation
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as progress:
         task = progress.add_task("[cyan]Translating chunks...", total=len(chunks))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=load_key("max_workers")) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=get_effective_max_workers()) as executor:
             futures = []
             for i, chunk in enumerate(chunks):
                 future = executor.submit(translate_chunk, chunk, chunks, theme_prompt, i)
@@ -107,6 +146,11 @@ def translate_all():
     
     df_time.to_excel(_4_2_TRANSLATION, index=False)
     console.print("[bold green]✅ Translation completed and results saved.[/bold green]")
+    # Cache the profile used for this translation
+    try:
+        write_translation_profile_cache()
+    except Exception:
+        pass
 
 if __name__ == '__main__':
     translate_all()

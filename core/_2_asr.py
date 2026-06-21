@@ -4,10 +4,21 @@ from core.asr_backend.audio_preprocess import process_transcription, convert_vid
 from core._1_ytdlp import find_video_files
 from core.utils.models import *
 
+LOCAL_ASR_SEGMENT_SECONDS = 30
+LOCAL_ASR_SEGMENT_SEARCH_WINDOW = 10
+SUPPORTED_ASR_RUNTIMES = ("local", "mlx")
+
+
+def resolve_asr_runtime(value):
+    runtime = str(value or "").strip()
+    return runtime if runtime in SUPPORTED_ASR_RUNTIMES else "mlx"
+
 @check_file_exists(_2_CLEANED_CHUNKS)
 def transcribe():
     # 1. video to audio
     video_file = find_video_files()
+    if not video_file:
+        raise RuntimeError("No source video found in output. Please download or upload a video before starting subtitle processing.")
     convert_video_to_audio(video_file)
 
     # 2. Demucs vocal separation:
@@ -17,25 +28,25 @@ def transcribe():
     else:
         vocal_audio = _RAW_AUDIO_FILE
 
-    # 3. Extract audio
-    segments = split_audio(_RAW_AUDIO_FILE)
-    
-    # 4. Transcribe audio by clips
+    # 4. Transcribe audio by clips.
     all_results = []
-    runtime = load_key("whisper.runtime")
-    if runtime == "local":
-        from core.asr_backend.whisperX_local import transcribe_audio as ts
-        rprint("[cyan]🎤 Transcribing audio with local model...[/cyan]")
-    elif runtime == "cloud":
-        from core.asr_backend.whisperX_302 import transcribe_audio_302 as ts
-        rprint("[cyan]🎤 Transcribing audio with 302 API...[/cyan]")
-    elif runtime == "elevenlabs":
-        from core.asr_backend.elevenlabs_asr import transcribe_audio_elevenlabs as ts
-        rprint("[cyan]🎤 Transcribing audio with ElevenLabs API...[/cyan]")
+    runtime = resolve_asr_runtime(load_key("whisper.runtime"))
+    if runtime == "mlx":
+        from core.asr_backend.mlx_whisper_local import transcribe_audio_segments as ts_batch
+        rprint("[cyan]🎤 Transcribing audio with MLX Whisper / Metal...[/cyan]")
+    else:
+        from core.asr_backend.whisperX_local import transcribe_audio_segments as ts_batch
+        rprint("[cyan]🎤 Transcribing audio with local WhisperX model...[/cyan]")
 
-    for start, end in segments:
-        result = ts(_RAW_AUDIO_FILE, vocal_audio, start, end)
-        all_results.append(result)
+    # Long single-pass transcription can miss speech islands on documentary
+    # or news audio. Use shorter chunks while keeping the model loaded once
+    # inside transcribe_audio_segments().
+    segments = split_audio(
+        _RAW_AUDIO_FILE,
+        target_len=LOCAL_ASR_SEGMENT_SECONDS,
+        win=LOCAL_ASR_SEGMENT_SEARCH_WINDOW,
+    )
+    all_results.append(ts_batch(_RAW_AUDIO_FILE, vocal_audio, segments))
     
     # 5. Combine results
     combined_result = {'segments': []}

@@ -167,8 +167,23 @@ batch/tasks_setting.xlsx
 .DS_Store
 AllinOne.ipynb
 config.backup.yaml
+config_history.json
+*.bac.py
+*.bak
+*.bak.py
+*.backup.py
+*-old.py
+*-vibenew.py
+/work/
+/docs/superpowers/plans/*.md
+/docs/superpowers/specs/*.md
+.streamlit/secrets.toml
+.env*
+!.env.example
 
 # runtime
 runtime/
 dev/
 installer_files/
+streamlit.log
+streamlit.pid

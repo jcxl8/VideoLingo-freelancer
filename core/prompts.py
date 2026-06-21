@@ -15,7 +15,8 @@ Split the given subtitle text into **{num_parts}** parts, each less than **{word
 1. Maintain sentence meaning coherence according to Netflix subtitle standards
 2. MOST IMPORTANT: Keep parts roughly equal in length (minimum 3 words each)
 3. Split at natural points like punctuation marks or conjunctions
-4. If provided text is repeated words, simply split at the middle of the repeated words.
+4. CRITICAL: NEVER split a number (e.g., "1,500", "1,000", "5'9"", "200-pound"). Keep all parts of a number together in one segment. Do NOT place [br] inside or adjacent to numbers.
+5. If provided text is repeated words, simply split at the middle of the repeated words.
 
 ## Steps
 1. Analyze the sentence structure, complexity, and key splitting challenges
@@ -50,7 +51,7 @@ Note: Start you answer with ```json and end with ```, do not add any other text.
 
 ## ================================================================
 # @ step4_1_summarize.py
-def get_summary_prompt(source_content, custom_terms_json=None):
+def get_summary_prompt(source_content, custom_terms_json=None, video_description=None):
     src_lang = load_key("whisper.detected_language")
     tgt_lang = load_key("target_language")
     
@@ -61,6 +62,17 @@ def get_summary_prompt(source_content, custom_terms_json=None):
         for term in custom_terms_json['terms']:
             terms_list.append(f"- {term['src']}: {term['tgt']} ({term['note']})")
         terms_note = "\n### Existing Terms\nPlease exclude these terms in your extraction:\n" + "\n".join(terms_list)
+
+    video_description_note = ""
+    if video_description:
+        video_description_note = f"""
+### Video Description
+Use this creator-provided video description as background context for topic, names, terminology, and intended meaning. Do not translate the description itself unless relevant terms appear in the subtitles.
+Pay special attention to proper nouns in the description. WhisperX may misspell names, titles, teams, brands, or places in the subtitle transcript. Extract these proper nouns as terms and note that similar ASR spellings should be normalized to the exact description spelling.
+<video_description>
+{video_description}
+</video_description>
+""".strip()
     
     summary_prompt = f"""
 ## Role
@@ -74,12 +86,15 @@ For the provided {src_lang} video text:
 
 {terms_note}
 
+{video_description_note}
+
 Steps:
 1. Topic Summary:
    - Quick scan for general understanding
    - Write two sentences: first for main topic, second for key point
 2. Term Extraction:
    - Mark professional terms and names (excluding those listed in Existing Terms)
+   - Include important proper nouns from the video description even if the transcript spelling is slightly different
    - Provide {tgt_lang} translation or keep original
    - Add brief explanation
    - Extract less than 15 terms
@@ -170,6 +185,8 @@ We have a segment of original {src_language} subtitles that need to be directly 
 1. Faithful to the original: Accurately convey the content and meaning of the original text, without arbitrarily changing, adding, or omitting content.
 2. Accurate terminology: Use professional terms correctly and maintain consistency in terminology.
 3. Understand the context: Fully comprehend and reflect the background and contextual relationships of the text.
+4. Keep common English acronyms such as NBA, AI, DNA, MBA, CEO, FBI, and NASA as acronyms by default; do not expand or translate them unless the local context or terminology notes specifically require it.
+5. When Chinese text contains English words, acronyms, brand names, product names, or numbers, put a space between the Chinese characters and the English/number text, e.g. "工作流模型 API 密钥有效", "iPhone 手机", "AI 技术".
 </translation_principles>
 
 ## INPUT
@@ -194,7 +211,10 @@ def get_prompt_expressiveness(faithfulness_result, lines, shared_prompt):
             "origin": value["origin"],
             "direct": value["direct"],
             "reflect": "your reflection on direct translation",
-            "free": "your free translation"
+            "free": "your free translation",
+            "ambiguous": False,
+            "ambiguity": "ambiguous word or phrase, or empty string if none",
+            "reason": "why this should be manually checked, or empty string if none"
         }
         for key, value in faithfulness_result.items()
     }
@@ -215,6 +235,8 @@ Your task is to reflect on and improve these direct translations to create more 
 3. Perform free translation based on your analysis
 4. Do not add comments or explanations in the translation, as the subtitles are for the audience to read
 5. Do not leave empty lines in the free translation, as the subtitles are for the audience to read
+6. If a source word or phrase could reasonably have multiple meanings, set "ambiguous" to true even when context resolves it. Fill "ambiguity" with the exact word/phrase and "reason" with a concise manual-check note.
+7. Correct likely ASR misspellings of proper nouns by using the exact name/title/place/team/brand from the video description or terminology notes when context supports it.
 
 {shared_prompt}
 
@@ -230,6 +252,10 @@ Please use a two-step thinking process to handle the text line by line:
    - Aim for contextual smoothness and naturalness, conforming to {TARGET_LANGUAGE} expression habits
    - Ensure it's easy for {TARGET_LANGUAGE} audience to understand and accept
    - Adapt the language style to match the theme (e.g., use casual language for tutorials, professional terminology for technical content, formal language for documentaries)
+   - Use the video description, summary, surrounding context, and terminology notes to resolve ambiguous words, but still flag ambiguous words for manual review
+   - If a name in the subtitle looks like a misspelling of a proper noun from the video description, use the exact description spelling in the free translation
+   - Keep common English acronyms such as NBA, AI, DNA, MBA, CEO, FBI, and NASA as acronyms by default; do not expand or translate them unless the local context or terminology notes specifically require it
+   - When Chinese text contains English words, acronyms, brand names, product names, or numbers, put a space between the Chinese characters and the English/number text, e.g. "工作流模型 API 密钥有效", "iPhone 手机", "AI 技术"
 </Translation Analysis Steps>
    
 ## INPUT
@@ -245,6 +271,66 @@ Please use a two-step thinking process to handle the text line by line:
 Note: Start you answer with ```json and end with ```, do not add any other text.
 '''
     return prompt_expressiveness.strip()
+
+def get_prompt_refine_translator_result(lines, translations, shared_prompt):
+    TARGET_LANGUAGE = load_key("target_language")
+    src_language = load_key("whisper.detected_language")
+    source_lines = lines.split('\n')
+    translation_lines = translations.split('\n')
+    json_format = {
+        str(i): {
+            "origin": source,
+            "direct": translation_lines[i - 1] if i - 1 < len(translation_lines) else "",
+            "reflect": "brief reflection on problems in direct translation",
+            "free": f"natural concise {TARGET_LANGUAGE} subtitle",
+            "ambiguous": False,
+            "ambiguity": "ambiguous word or phrase, or empty string if none",
+            "reason": "why this should be manually checked, or empty string if none"
+        }
+        for i, source in enumerate(source_lines, 1)
+    }
+    json_format = json.dumps(json_format, indent=2, ensure_ascii=False)
+
+    return f'''
+## Role
+You are a senior Netflix subtitle translation editor fluent in {src_language} and {TARGET_LANGUAGE}.
+
+## Task
+The plain translation model has produced direct {TARGET_LANGUAGE} translations.
+Reflect on each direct translation and rewrite it into a natural, concise, viewer-friendly free translation.
+
+Rules:
+1. Preserve the source meaning and terminology.
+2. Use idiomatic {TARGET_LANGUAGE}, not word-for-word machine translation.
+3. Remove meaningless spoken fillers such as um, uh, er, hmm when they do not carry meaning.
+4. Keep names, titles, and proper nouns accurate.
+5. Use the video description, summary, surrounding context, and terminology notes to resolve ambiguous words. For example, if the video is about filmmaking or an interview about making a film, translate "shoot" / "shooting" as filming/拍摄 rather than weapon shooting/射击 unless the local sentence clearly means weapons.
+6. Correct likely ASR misspellings of proper nouns by using the exact name/title/place/team/brand from the video description or terminology notes when context supports it. For example, if the description mentions "Gout Gout" but ASR says "Gaut", "Gao", or "Gout", use "Gout Gout".
+7. Treat a standalone English lowercase "i" as the first-person pronoun "I" unless the local context clearly means a letter or symbol.
+8. If a source word or phrase could reasonably have multiple meanings, set "ambiguous" to true even when you believe the context resolves it. Fill "ambiguity" with the specific word/phrase and "reason" with a concise manual-check note.
+9. Keep common English acronyms such as NBA, AI, DNA, MBA, CEO, FBI, and NASA as acronyms by default; do not expand or translate them unless the local context or terminology notes specifically require it.
+10. When Chinese text contains English words, acronyms, brand names, product names, or numbers, put a space between the Chinese characters and the English/number text, e.g. "工作流模型 API 密钥有效", "iPhone 手机", "AI 技术".
+11. Keep exactly the same item keys and one free translation per source line.
+12. Do not output comments outside JSON.
+
+{shared_prompt}
+
+## INPUT
+<subtitles>
+{lines}
+</subtitles>
+
+<direct_translations>
+{translations}
+</direct_translations>
+
+## Output in only JSON format and no other text
+```json
+{json_format}
+```
+
+Note: Start your answer with ```json and end with ```, do not add any other text.
+'''.strip()
 
 
 ## ================================================================
@@ -273,8 +359,13 @@ Your task is to create the best splitting scheme for the {targ_lang} subtitles b
 
 1. Analyze the word order and structural correspondence between {src_lang} and {targ_lang} subtitles
 2. Split the {targ_lang} subtitles according to the pre-processed {src_lang} split version
-3. Never leave empty lines. If it's difficult to split based on meaning, you may appropriately rewrite the sentences that need to be aligned
-4. Do not add comments or explanations in the translation, as the subtitles are for the audience to read
+3. Use free translation when needed: the aligned {targ_lang} parts should be natural subtitles, not rigid word-for-word fragments
+4. Remove meaningless spoken fillers such as um, uh, er, hmm when they do not carry meaning
+5. Never leave empty lines. If it's difficult to split based on meaning, you may appropriately rewrite the sentences that need to be aligned
+6. Keep each target part semantically matched to its corresponding source part; do not move content to the wrong line
+7. Do not add comments or explanations in the translation, as the subtitles are for the audience to read
+8. Keep common English acronyms such as NBA, AI, DNA, MBA, CEO, FBI, and NASA as acronyms by default; do not expand or translate them unless the local context or terminology notes specifically require it.
+9. When Chinese text contains English words, acronyms, brand names, product names, or numbers, put a space between the Chinese characters and the English/number text, e.g. "工作流模型 API 密钥有效", "iPhone 手机", "AI 技术".
 
 ## INPUT
 <subtitles>

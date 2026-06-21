@@ -6,6 +6,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich.console import Console
 from core.utils import *
 from core.utils.models import *
+from core.utils.structured_cells import parse_list_cell, parse_time_ranges_cell
 console = Console()
 
 DUB_VOCAL_FILE = 'output/dub.mp3'
@@ -16,10 +17,16 @@ OUTPUT_FILE_TEMPLATE = f"{_AUDIO_SEGS_DIR}/{{}}.wav"
 def load_and_flatten_data(excel_file):
     """Load and flatten Excel data"""
     df = pd.read_excel(excel_file)
-    lines = [eval(line) if isinstance(line, str) else line for line in df['lines'].tolist()]
+    lines = [
+        parse_list_cell(line, field="lines", row=index + 2)
+        for index, line in enumerate(df['lines'].tolist())
+    ]
     lines = [item for sublist in lines for item in sublist]
     
-    new_sub_times = [eval(time) if isinstance(time, str) else time for time in df['new_sub_times'].tolist()]
+    new_sub_times = [
+        parse_time_ranges_cell(time, row=index + 2)
+        for index, time in enumerate(df['new_sub_times'].tolist())
+    ]
     new_sub_times = [item for sublist in new_sub_times for item in sublist]
     
     return df, lines, new_sub_times
@@ -29,7 +36,9 @@ def get_audio_files(df):
     audios = []
     for index, row in df.iterrows():
         number = row['number']
-        line_count = len(eval(row['lines']) if isinstance(row['lines'], str) else row['lines'])
+        line_count = len(
+            parse_list_cell(row['lines'], field="lines", row=index + 2)
+        )
         for line_index in range(line_count):
             temp_file = OUTPUT_FILE_TEMPLATE.format(f"{number}_{line_index}")
             audios.append(temp_file)

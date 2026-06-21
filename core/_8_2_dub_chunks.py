@@ -6,11 +6,23 @@ from core.asr_backend.audio_preprocess import get_audio_duration
 from core.tts_backend.estimate_duration import init_estimator, estimate_duration
 from core.utils import *
 from core.utils.models import *
+from core._1_ytdlp import find_video_files
+from core._7_sub_into_vid import get_default_subtitle_paths
 
 SRC_SRT = "output/src.srt"
 TRANS_SRT = "output/trans.srt"
 MAX_MERGE_COUNT = 5
 ESTIMATOR = None
+
+def _resolve_subtitle_file(kind):
+    try:
+        path = get_default_subtitle_paths(find_video_files())[kind]
+        if os.path.exists(path):
+            return path
+    except Exception:
+        pass
+    legacy_path = SRC_SRT if kind == "src" else TRANS_SRT
+    return legacy_path
 
 def calc_if_too_fast(est_dur, tol_dur, duration, tolerance):
     accept = load_key("speed_factor.accept") # Maximum acceptable speed factor
@@ -140,8 +152,8 @@ def gen_dub_chunks():
     df = process_cutoffs(df)
 
     rprint("[📝 Reading] Loading transcript files...")
-    content = open(TRANS_SRT, "r", encoding="utf-8").read()
-    ori_content = open(SRC_SRT, "r", encoding="utf-8").read()
+    content = open(_resolve_subtitle_file("trans"), "r", encoding="utf-8").read()
+    ori_content = open(_resolve_subtitle_file("src"), "r", encoding="utf-8").read()
     
     # Process subtitle content
     content_lines = []
