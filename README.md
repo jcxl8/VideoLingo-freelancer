@@ -2,7 +2,7 @@
 
 <img src="docs/logo.png" alt="VideoLingo-Freelancer Logo" height="140">
 
-# VideoLingo-Freelancer-Skill
+# VideoLingo-Freelancer
 
 ### Local video translation, subtitle production, and dubbing — built for independent creators
 
