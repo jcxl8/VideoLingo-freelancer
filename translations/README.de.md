@@ -12,6 +12,12 @@ Lokale Videoübersetzung, Untertitelproduktion und Synchronisation
 
 VideoLingo-Freelancer ist eine angepasste Distribution von [Huanshere/VideoLingo](https://github.com/Huanshere/VideoLingo) für Freelancer und unabhängige Kreative. Sie verbindet lokale Spracherkennung, Übersetzung mit zwei Modellen, Untertitelprüfung, Quer- und Hochformat, Aufgabenwiederherstellung, Projektverlauf und Synchronisation in Streamlit.
 
+## 🤖 Agent Skill
+
+Automatisiere eine vorhandene VideoLingo-Freelancer-Installation aus **Codex, Claude Code oder OpenClaw** mit dem [VideoLingo-Freelancer Skill](https://github.com/jcxl8/videolingo-freelancer-skill). Der AgentSkills-kompatible CLI-Orchestrator bereitet Eingaben vor, transkribiert, übersetzt, prüft, rendert, synchronisiert und archiviert Aufträge anhand natürlichsprachiger Anweisungen.
+
+Der Skill enthält weder den Quellcode dieser Anwendung noch Modelle oder Zugangsdaten. Installiere und konfiguriere zuerst VideoLingo-Freelancer und verbinde den Skill anschließend mit dieser Installation.
+
 ## Hauptfunktionen
 
 - MLX Whisper auf Apple Silicon und WhisperX / faster-whisper auf anderen unterstützten Systemen.

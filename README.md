@@ -20,6 +20,12 @@ VideoLingo-Freelancer is a customized distribution of [Huanshere/VideoLingo](htt
 
 The project preserves the upstream Git history and Apache 2.0 license while adding a workflow tuned for both landscape videos and 9:16 vertical content. It is an independent derivative distribution, not an official VideoLingo release.
 
+## 🤖 Agent Skill
+
+Automate an installed VideoLingo-Freelancer workflow from **Codex, Claude Code, or OpenClaw** with the [VideoLingo-Freelancer Skill](https://github.com/jcxl8/videolingo-freelancer-skill). Its AgentSkills-compatible CLI orchestrator can prepare input, transcribe, translate, proofread, render, dub, and archive jobs from natural-language requests.
+
+The Skill does not include this application’s source code, models, or credentials. Install and configure VideoLingo-Freelancer first, then connect the Skill to that existing checkout.
+
 ## ✨ Key Features
 
 | Area | Capabilities |

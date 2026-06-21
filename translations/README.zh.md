@@ -12,6 +12,12 @@
 
 VideoLingo-Freelancer 是基于 [Huanshere/VideoLingo](https://github.com/Huanshere/VideoLingo) 定制的本地视频译制工具，面向自由职业者和独立创作者。它将本地 ASR、双模型翻译、字幕校对、横竖屏排版、任务恢复、历史项目和配音整合在一个 Streamlit 工作台中。
 
+## 🤖 Agent Skill
+
+通过 [VideoLingo-Freelancer Skill](https://github.com/jcxl8/videolingo-freelancer-skill)，可让 **Codex、Claude Code 或 OpenClaw** 自动操作已经安装好的 VideoLingo-Freelancer。其兼容 AgentSkills 的 CLI 编排器可根据自然语言请求完成输入准备、转录、翻译、校对、字幕烧录、配音和归档。
+
+Skill 不包含本应用源码、模型或密钥。请先安装并配置 VideoLingo-Freelancer，再把 Skill 连接到现有目录。
+
 ## 主要功能
 
 - Apple Silicon 使用 MLX Whisper，其他支持平台可使用 WhisperX / faster-whisper。

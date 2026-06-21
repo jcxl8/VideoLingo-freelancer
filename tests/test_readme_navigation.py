@@ -7,6 +7,25 @@ LOCALIZED_PAGES = ("zh", "es", "ru", "fr", "de", "it", "ja")
 
 
 class ReadmeNavigationTest(unittest.TestCase):
+    def test_all_readmes_publish_agent_skill_entry(self):
+        pages = [ROOT / "README.md"] + [
+            ROOT / "translations" / f"README.{code}.md"
+            for code in LOCALIZED_PAGES
+        ]
+        required = (
+            "https://github.com/jcxl8/videolingo-freelancer-skill",
+            "Codex",
+            "Claude Code",
+            "OpenClaw",
+            "CLI",
+        )
+
+        for page in pages:
+            text = page.read_text(encoding="utf-8")
+            for item in required:
+                with self.subTest(page=page.name, item=item):
+                    self.assertIn(item, text)
+
     def test_root_readme_has_upstream_inspired_sections(self):
         text = ROOT.joinpath("README.md").read_text(encoding="utf-8")
 
