@@ -1,9 +1,10 @@
+import argparse
 import os, sys
 import platform
 import subprocess
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-ascii_logo = """
+ascii_logo = r"""
 __     ___     _            _     _                    
 \ \   / (_) __| | ___  ___ | |   (_)_ __   __ _  ___  
  \ \ / /| |/ _` |/ _ \/ _ \| |   | | '_ \ / _` |/ _ \ 
@@ -14,6 +15,29 @@ __     ___     _            _     _
 
 def install_package(*packages):
     subprocess.check_call([sys.executable, "-m", "pip", "install", *packages])
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Install VideoLingo-Freelancer dependencies.")
+    parser.add_argument(
+        "--no-launch",
+        action="store_true",
+        help="Install everything without starting Streamlit.",
+    )
+    parser.add_argument(
+        "--skip-torch",
+        action="store_true",
+        help="Skip PyTorch installation when a compatible build is already managed externally.",
+    )
+    return parser.parse_args(argv)
+
+
+def require_python_312():
+    if sys.version_info[:2] != (3, 12):
+        raise SystemExit(
+            "VideoLingo-Freelancer supports Python 3.12. "
+            "Run `python setup_env.py` to create the supported environment."
+        )
 
 def check_nvidia_gpu():
     install_package("nvidia-ml-py")
@@ -140,7 +164,9 @@ def _detect_cuda_index():
     # Default: cu126 is the broadest CUDA 12 index for PyTorch 2.8
     return f"{INDEX}/cu126"
 
-def main():
+def main(argv=None):
+    args = parse_args(argv)
+    require_python_312()
     install_package("requests", "rich", "ruamel.yaml", "InquirerPy")
     from rich.console import Console
     from rich.panel import Panel
@@ -184,19 +210,20 @@ def main():
         from core.utils.pypi_autochoose import main as choose_mirror
         choose_mirror()
 
-    # Detect system and GPU
-    has_gpu = platform.system() != 'Darwin' and check_nvidia_gpu()
-    if has_gpu:
-        console.print(Panel(t("🎮 NVIDIA GPU detected, installing CUDA version of PyTorch..."), style="cyan"))
-        cuda_index = _detect_cuda_index()
-        console.print(f"[cyan]📦 Using PyTorch index:[/cyan] {cuda_index}")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "torch==2.8.0", "torchaudio==2.8.0", "--index-url", cuda_index])
-    else:
-        system_name = "🍎 MacOS" if platform.system() == 'Darwin' else "💻 No NVIDIA GPU"
-        console.print(Panel(t(f"{system_name} detected, installing CPU version of PyTorch... Note: it might be slow during whisperX transcription."), style="cyan"))
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "torch==2.8.0", "torchaudio==2.8.0"])
+    @except_handler("Failed to install PyTorch", retry=1, delay=5)
+    def install_pytorch():
+        has_gpu = platform.system() != 'Darwin' and check_nvidia_gpu()
+        if has_gpu:
+            console.print(Panel(t("🎮 NVIDIA GPU detected, installing CUDA version of PyTorch..."), style="cyan"))
+            cuda_index = _detect_cuda_index()
+            console.print(f"[cyan]📦 Using PyTorch index:[/cyan] {cuda_index}")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "torch==2.8.0", "torchaudio==2.8.0", "--index-url", cuda_index])
+        else:
+            system_name = "🍎 macOS" if platform.system() == 'Darwin' else "💻 No NVIDIA GPU"
+            console.print(Panel(t(f"{system_name} detected, installing the standard PyTorch build."), style="cyan"))
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "torch==2.8.0", "torchaudio==2.8.0"])
 
-    @except_handler("Failed to install project")
+    @except_handler("Failed to install project", retry=1, delay=5)
     def install_requirements():
         # Install demucs separately with --no-deps to avoid its outdated
         # torchaudio<2.2 constraint conflicting with whisperx's torchaudio>=2.5.1.
@@ -209,7 +236,10 @@ def main():
         subprocess.check_call([sys.executable, "-m", "pip", "install", "dora-search", "openunmix", "lameenc"])
 
         console.print(Panel(t("Installing project in editable mode using `pip install -e .`"), style="cyan"))
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", "."], env={**os.environ, "PIP_NO_CACHE_DIR": "0", "PYTHONIOENCODING": "utf-8"})
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "-e", "."],
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
 
     @except_handler("Failed to install Noto fonts")
     def install_noto_font():
@@ -232,6 +262,8 @@ def main():
     if platform.system() == 'Linux':
         install_noto_font()
     
+    if not args.skip_torch:
+        install_pytorch()
     install_requirements()
     check_ffmpeg()
     
@@ -239,7 +271,7 @@ def main():
     panel1_text = (
         t("Installation completed") + "\n\n" +
         t("Now I will run this command to start the application:") + "\n" +
-        "[bold]streamlit run st.py[/bold]\n" +
+        "[bold]python -m streamlit run st.py[/bold]\n" +
         t("Note: First startup may take up to 1 minute")
     )
     console.print(Panel(panel1_text, style="bold green"))
@@ -252,8 +284,8 @@ def main():
     )
     console.print(Panel(panel2_text, style="yellow"))
 
-    # start the application
-    subprocess.Popen(["streamlit", "run", "st.py"])
+    if not args.no_launch:
+        subprocess.Popen([sys.executable, "-m", "streamlit", "run", "st.py"])
 
 if __name__ == "__main__":
     main()

@@ -78,34 +78,65 @@ Translation output can be configured independently. Available dubbing languages 
 
 ### Requirements
 
-- Python 3.12
-- FFmpeg
+- Git
+- FFmpeg and FFprobe on `PATH`
 - macOS, Windows, or Linux
+- a small system Python only to run the bootstrap script; uv downloads the maintained Python 3.12 runtime
 - Apple Silicon or an NVIDIA GPU is recommended for longer videos, but is not required for every workflow
 
-### Install and start
+Install FFmpeg before VideoLingo-Freelancer:
+
+```bash
+brew install ffmpeg                 # macOS with Homebrew
+choco install ffmpeg                # Windows with Chocolatey
+sudo apt update && sudo apt install ffmpeg  # Ubuntu / Debian
+```
+
+### Recommended: uv + Python 3.12
+
+The bootstrapper follows the current upstream installation direction while retaining the Python 3.12 runtime tested by VideoLingo-Freelancer. It installs uv when necessary, creates `.venv`, installs all dependencies, and starts the app:
 
 ```bash
 git clone https://github.com/jcxl8/VideoLingo-freelancer.git
 cd VideoLingo-freelancer
+python setup_env.py              # use python3 on macOS/Linux if needed
+```
+
+Install without launching the interface:
+
+```bash
+python setup_env.py --no-launch
+```
+
+Start it later with the environment-bound interpreter:
+
+```bash
+.venv/bin/python -m streamlit run st.py            # macOS / Linux
+.venv\Scripts\python.exe -m streamlit run st.py    # Windows
+```
+
+Windows users can also double-click `OneKeyStart_uv.bat` after setup.
+
+### Manual Python 3.12 fallback
+
+If uv cannot be used, create a Python 3.12 virtual environment yourself and run the same installer:
+
+```bash
 python3.12 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate                 # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
 python install.py
 ```
 
-To start it again later:
+Use `python install.py --no-launch` for unattended installation. The installer must run under Python 3.12 and always launches Streamlit through that same interpreter.
 
-```bash
-streamlit run st.py
-```
+### Platform-specific speech dependencies
 
-### Apple Silicon and MLX Whisper
+- **Apple Silicon macOS:** the conditional dependency installs `mlx-whisper==0.4.3`; select `MLX Whisper / Metal` with `large-v3`.
+- **Windows or Linux with NVIDIA:** the installer detects the driver through `nvidia-smi` and selects a compatible PyTorch wheel before installing WhisperX.
+- **CPU or Intel macOS:** the standard PyTorch build and WhisperX path remain available, but transcription is slower.
 
-```bash
-pip install mlx-whisper
-```
-
-Select `MLX Whisper / Metal` in the ASR Runtime control. On non-macOS systems, select `WhisperX / faster-whisper` and use the `large-v3` model.
+PyTorch and Demucs are intentionally installed by `install.py` rather than locked as universal wheels because CUDA indexes and torchaudio compatibility vary by platform. See [`docs/dependency-management.md`](docs/dependency-management.md).
 
 ## ⚙️ Configuration
 

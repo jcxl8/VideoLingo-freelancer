@@ -28,13 +28,28 @@ Skill не содержит исходный код приложения, мод
 
 ## Установка
 
+Требования: Git, FFmpeg/FFprobe в `PATH` и системный Python для запуска установщика. uv автоматически загрузит поддерживаемый проектом Python 3.12.
+
+Рекомендуемая установка через uv в изолированное окружение:
+
 ```bash
 git clone https://github.com/jcxl8/VideoLingo-freelancer.git
 cd VideoLingo-freelancer
+python setup_env.py              # при необходимости используйте python3 в macOS/Linux
+```
+
+Для установки без запуска интерфейса выполните `python setup_env.py --no-launch`. После установки в Windows также доступен `OneKeyStart_uv.bat`.
+
+Ручной вариант с Python 3.12:
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 python install.py
 ```
+
+Сначала установите FFmpeg: `brew install ffmpeg` в macOS, `choco install ffmpeg` в Windows или `sudo apt install ffmpeg` в Ubuntu/Debian. На Apple Silicon условная зависимость устанавливает MLX Whisper; на других системах установщик настраивает PyTorch и WhisperX.
 
 Полные инструкции по настройке и ограничениям находятся в [английском README](../README.md).
 

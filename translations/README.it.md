@@ -28,13 +28,28 @@ Lo Skill non include il codice sorgente dell’applicazione, i modelli o le cred
 
 ## Installazione
 
+Requisiti: Git, FFmpeg/FFprobe disponibili nel `PATH` e un Python di sistema per avviare il bootstrap. uv scarica automaticamente il Python 3.12 mantenuto dal progetto.
+
+Installazione consigliata con uv in un ambiente isolato:
+
 ```bash
 git clone https://github.com/jcxl8/VideoLingo-freelancer.git
 cd VideoLingo-freelancer
+python setup_env.py              # usa python3 su macOS/Linux se necessario
+```
+
+Per installare senza avviare l’interfaccia, esegui `python setup_env.py --no-launch`. Su Windows puoi poi usare anche `OneKeyStart_uv.bat`.
+
+Alternativa manuale con Python 3.12:
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 python install.py
 ```
+
+Installa prima FFmpeg: `brew install ffmpeg` su macOS, `choco install ffmpeg` su Windows oppure `sudo apt install ffmpeg` su Ubuntu/Debian. Apple Silicon installa MLX Whisper tramite dipendenza condizionale; gli altri sistemi configurano PyTorch e WhisperX.
 
 Consulta il [README inglese](../README.md) per configurazione completa, limitazioni e verifiche.
 

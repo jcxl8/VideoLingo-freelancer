@@ -52,11 +52,23 @@ Clone the curated public release instead of copying selected Python files from a
 ```bash
 git clone https://github.com/jcxl8/VideoLingo-freelancer.git
 cd VideoLingo-freelancer
+python setup_env.py --no-launch
+```
 
+The bootstrapper installs uv when needed, creates `.venv` with the maintained Python 3.12 runtime, and calls `install.py` with that environment's interpreter. On Windows, use `OneKeyStart_uv.bat` after setup. Start the interface with:
+
+```bash
+.venv/bin/python -m streamlit run st.py            # macOS / Linux
+.venv\Scripts\python.exe -m streamlit run st.py    # Windows
+```
+
+If uv cannot be used, create the environment manually:
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python install.py
+python install.py --no-launch
 ```
 
 If `install.py` is unsuitable for the target machine, install from the repository's requirement files and keep the same Python interpreter for installation and execution:
@@ -69,12 +81,6 @@ For development and CI checks:
 
 ```bash
 python -m pip install -r requirements-ci.txt
-```
-
-Start the interface only after validation succeeds:
-
-```bash
-streamlit run st.py
 ```
 
 ## 4. Updating an existing installation
@@ -159,6 +165,7 @@ Copy generated media separately only when it is intentionally required. Do not a
 ### 7.1 ASR and platform selection
 
 - `core/asr_backend/mlx_whisper_local.py` implements local MLX Whisper support.
+- `mlx-whisper==0.4.3` is installed by a platform marker only on Apple Silicon macOS.
 - The normal Whisper/WhisperX route remains the cross-platform fallback.
 - Platform selection should happen at runtime; importing MLX must not break a non-Mac installation.
 - ASR model caches stay outside source control.

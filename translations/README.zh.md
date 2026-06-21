@@ -28,13 +28,28 @@ Skill 不包含本应用源码、模型或密钥。请先安装并配置 VideoLi
 
 ## 安装
 
+前置条件：Git、系统 `PATH` 中可用的 FFmpeg/FFprobe，以及用于启动引导脚本的 Python。uv 会自动下载本项目维护的 Python 3.12。
+
+推荐使用 uv 创建隔离环境并安装依赖：
+
 ```bash
 git clone https://github.com/jcxl8/VideoLingo-freelancer.git
 cd VideoLingo-freelancer
+python setup_env.py              # macOS/Linux 必要时使用 python3
+```
+
+只安装而不启动界面，可运行 `python setup_env.py --no-launch`。Windows 安装完成后也可双击 `OneKeyStart_uv.bat`。
+
+无法使用 uv 时，采用 Python 3.12 手动安装：
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 python install.py
 ```
+
+请先安装 FFmpeg，例如 macOS 使用 `brew install ffmpeg`，Windows 使用 `choco install ffmpeg`，Ubuntu/Debian 使用 `sudo apt install ffmpeg`。Apple Silicon 会按条件安装 MLX Whisper；其他平台安装器会配置 PyTorch 与 WhisperX。
 
 完整安装、配置、限制与验证说明请查看[英文主页](../README.md)。
 

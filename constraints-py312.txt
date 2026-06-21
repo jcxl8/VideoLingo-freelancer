@@ -8,6 +8,7 @@ inquirerpy==0.3.4
 json-repair==0.58.2
 librosa==0.11.0
 lightning==2.6.1
+mlx-whisper==0.4.3
 moviepy==1.0.3
 numpy==2.3.5
 openai==1.109.1
