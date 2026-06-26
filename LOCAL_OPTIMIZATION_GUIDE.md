@@ -186,8 +186,9 @@ This separation prevents expensive translation calls from being accidentally reu
 - Shared code owns timestamps, semantic splitting, and bilingual alignment.
 - Rendering code owns layout-specific line width, font size, margins, and watermark offset.
 - Portrait and landscape values must not silently overwrite one another.
+- Portrait hard-subtitle translation placement is configurable through `portrait_hardsub_placement` and is included in the subtitle preview cache stamp, so changing it invalidates stale previews.
 
-The pipeline should preserve existing bilingual structure when bilingual output is selected. If an intermediate spreadsheet changes, remove stale split intermediates before rerunning semantic alignment.
+The pipeline should preserve existing bilingual structure when bilingual output is selected. Bilingual subtitle post-processing also repairs short orphan English words at subtitle boundaries and avoids splitting multi-word proper nouns such as “Hong Kong” or “New York”. If an intermediate spreadsheet changes, remove stale split intermediates before rerunning semantic alignment.
 
 ### 7.4 Proofreading and controlled rework
 
@@ -233,6 +234,7 @@ whisper:
   runtime: mlx        # Apple Silicon macOS; select the regular backend elsewhere
 
 subtitle_layout: portrait_9_16
+portrait_hardsub_placement: auto
 
 watermark_enabled: true
 watermark_text: "Your Name"
@@ -246,8 +248,14 @@ Exact keys can evolve. Treat the repository's current `config.yaml` and configur
 
 Check both layout profiles:
 
-- portrait: line length, font size, vertical position, bilingual spacing, watermark offset;
+- portrait: line length, font size, vertical position, bilingual spacing, hard-subtitle translation placement, watermark offset;
 - landscape: its own line length, font size, vertical position, bilingual spacing, watermark offset.
+
+For portrait videos with existing source hard subtitles, `portrait_hardsub_placement` accepts:
+
+- `auto`: smart placement. When the detected hard subtitle is very close to the bottom edge, the translation is tried above it first; otherwise the legacy below-first layout is preserved when it fits.
+- `above`: always try to place the translation above the source hard subtitle first.
+- `below`: always try to place the translation below the source hard subtitle first.
 
 ## 9. Validation and regression gates
 

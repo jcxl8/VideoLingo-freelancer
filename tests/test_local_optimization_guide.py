@@ -37,6 +37,19 @@ class LocalOptimizationGuideTest(unittest.TestCase):
             with self.subTest(item=item):
                 self.assertIn(item, text)
 
+    def test_guide_documents_current_portrait_hardsub_contract(self):
+        text = GUIDE.read_text(encoding="utf-8")
+        for item in (
+            "portrait_hardsub_placement: auto",
+            "`auto`",
+            "`above`",
+            "`below`",
+            "short orphan English words",
+            "multi-word proper nouns",
+        ):
+            with self.subTest(item=item):
+                self.assertIn(item, text)
+
 
 if __name__ == "__main__":
     unittest.main()
