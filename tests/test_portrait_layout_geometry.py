@@ -53,6 +53,20 @@ class PortraitLayoutGeometryTest(unittest.TestCase):
         self.assertLessEqual(layout.watermark.bottom + 8, hard.top)
         self.assertLessEqual(layout.translation.bottom + 10, layout.watermark.top)
 
+    def test_auto_placement_prefers_above_for_near_bottom_hardsub(self):
+        hard = Box(100, 760, 480, 820)
+        layout = layout_hardsub(self.metrics, hard, 2, 0, 0, prefer="auto")
+
+        self.assertEqual(layout.placement, "above")
+        self.assertLessEqual(layout.watermark.bottom + 8, hard.top)
+
+    def test_explicit_below_keeps_translation_below_when_it_fits(self):
+        hard = Box(100, 760, 480, 820)
+        layout = layout_hardsub(self.metrics, hard, 2, 0, 0, prefer="below")
+
+        self.assertEqual(layout.placement, "below")
+        self.assertGreaterEqual(layout.watermark.top, hard.bottom + 8)
+
     def test_all_boxes_stay_inside_safe_frame(self):
         hard = Box(92, 619, 411, 735)
         layout = layout_hardsub(self.metrics, hard, 3, -500, 500)

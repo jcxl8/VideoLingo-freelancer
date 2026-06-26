@@ -303,6 +303,11 @@ def _effective_watermark_offset(layout=SUBTITLE_LAYOUT_LANDSCAPE):
         LANDSCAPE_WATERMARK_DEFAULT_OFFSET,
     )
 
+def _portrait_hardsub_placement():
+    """Return the portrait hard-sub translation placement preference."""
+    placement = str(_safe_load_key("portrait_hardsub_placement", "auto") or "auto")
+    return placement if placement in ("auto", "above", "below") else "auto"
+
 def _is_portrait_video(target_width, target_height):
     return target_height > 0 and target_width > 0 and (target_height / target_width) >= PORTRAIT_RATIO_THRESHOLD
 
@@ -1232,8 +1237,9 @@ def _portrait_layout_for_subtitles(
             metrics,
             hard_box,
             trans_lines,
-            style.hardsub_translation_offset,
-            style.watermark_offset,
+            _effective_hardsub_translation_offset(SUBTITLE_LAYOUT_PORTRAIT),
+            _effective_watermark_offset(SUBTITLE_LAYOUT_PORTRAIT),
+            prefer=_portrait_hardsub_placement(),
         )
 
     src_lines = source_line_count or _max_source_line_count(
@@ -1254,7 +1260,7 @@ def _portrait_layout_for_subtitles(
         trans_lines,
         subtitle_mode,
         style.bilingual_offset,
-        style.watermark_offset,
+        _effective_watermark_offset(SUBTITLE_LAYOUT_PORTRAIT),
     )
 
 def _create_portrait_bilingual_ass(
@@ -1369,6 +1375,7 @@ def _hardsub_translation_geometry(source_hardsub_box, target_width, target_heigh
         2,
         _effective_hardsub_translation_offset(SUBTITLE_LAYOUT_PORTRAIT),
         _effective_watermark_offset(SUBTITLE_LAYOUT_PORTRAIT),
+        prefer=_portrait_hardsub_placement(),
     )
     margin_v = (
         portrait_layout.translation.top

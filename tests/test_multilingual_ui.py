@@ -54,6 +54,12 @@ class MultilingualUiTest(unittest.TestCase):
                 self.assertIsInstance(catalog, dict)
                 self.assertTrue(catalog, code)
 
+    def test_streamlit_buttons_use_current_width_api(self):
+        for path in ("st.py", "core/st_utils/download_video_section.py", "core/st_utils/sidebar_setting.py"):
+            with self.subTest(path=path):
+                text = __import__("pathlib").Path(path).read_text(encoding="utf-8")
+                self.assertNotIn("use_container_width=True", text)
+
 
 if __name__ == "__main__":
     unittest.main()

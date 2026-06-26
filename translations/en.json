@@ -348,5 +348,10 @@
   "Landscape Source Font Size": "Landscape Source Font Size",
   "Landscape Translation Font Size": "Landscape Translation Font Size",
   "Reference font size at 1080p; scales with video height": "Reference font size at 1080p; scales with video height",
-  "No original video found in this history project": "No original video found in this history project"
+  "No original video found in this history project": "No original video found in this history project",
+  "Portrait Hard Subtitle Translation Placement": "Hard-subtitle Translation Placement",
+  "Auto (smart)": "Auto (smart)",
+  "Always Above Hard Subtitle": "Always Above Hard Subtitle",
+  "Always Below Hard Subtitle": "Always Below Hard Subtitle",
+  "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "Auto: smart placement based on hard-sub position — places translation above when hard-sub is near the bottom"
 }

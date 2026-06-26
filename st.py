@@ -816,6 +816,7 @@ def _subtitle_preview_config_stamp():
         "portrait_hardsub_translation_font_size",
         "portrait_bilingual_offset",
         "portrait_hardsub_translation_offset",
+        "portrait_hardsub_placement",
         "portrait_watermark_font_size",
         "portrait_watermark_offset",
         "landscape_hardsub_translation_offset",

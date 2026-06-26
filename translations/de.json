@@ -28,5 +28,10 @@
   "Delete": "Löschen",
   "Deleted": "Gelöscht",
   "API Key is valid": " API-Schlüssel ist gültig",
-  "API Key is invalid": " API-Schlüssel ist ungültig"
+  "API Key is invalid": " API-Schlüssel ist ungültig",
+  "Portrait Hard Subtitle Translation Placement": "Platzierung der Hard-Subtitle-Übersetzung",
+  "Auto (smart)": "Automatisch (intelligent)",
+  "Always Above Hard Subtitle": "Immer über dem eingebrannten Untertitel",
+  "Always Below Hard Subtitle": "Immer unter dem eingebrannten Untertitel",
+  "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "Automatisch: intelligente Platzierung anhand der Hard-Subtitle-Position; platziert die Übersetzung darüber, wenn sie nahe am unteren Rand liegt"
 }

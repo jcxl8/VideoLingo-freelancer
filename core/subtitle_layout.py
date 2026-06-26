@@ -187,10 +187,43 @@ def layout_hardsub(
     translation_lines,
     translation_offset,
     watermark_offset,
+    prefer=None,
 ):
+    """Compute portrait hard-sub avoiding layout.
+
+    prefer:
+      - None / "auto": smart placement. If the detected hard subtitle is very
+        close to the bottom edge, try the translation above it first; otherwise
+        try below to preserve the legacy layout when the lower group still fits.
+      - "above": try above first.
+      - "below": try below first.
+    """
     translation_height = max(1, translation_lines) * _line_height(
         metrics.hardsub_translation_font_size
     )
+    if prefer is None or prefer == "auto":
+        first = "above" if hard_box.bottom >= int(metrics.height * 0.8) else "below"
+    else:
+        first = prefer
+
+    if first == "above":
+        above = _layout_hardsub_above(
+            metrics,
+            hard_box,
+            translation_height,
+            translation_offset,
+            watermark_offset,
+        )
+        if above is not None:
+            return above
+        return _layout_hardsub_below(
+            metrics,
+            hard_box,
+            translation_height,
+            translation_offset,
+            watermark_offset,
+        )
+
     below = _layout_hardsub_below(
         metrics,
         hard_box,

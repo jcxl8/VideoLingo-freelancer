@@ -31,6 +31,7 @@ portrait_translation_font_size: 60
 portrait_hardsub_translation_font_size: 30
 portrait_bilingual_offset: 0
 portrait_hardsub_translation_offset: 0
+portrait_hardsub_placement: auto
 portrait_watermark_font_size: 27
 portrait_watermark_offset: 0
 watermark_enabled: true

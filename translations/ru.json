@@ -122,5 +122,10 @@
     "Task completed!": "Задача выполнена!",
     "Task stopped": "Задача остановлена",
     "Task error": "Ошибка задачи",
-    "OK": "OK"
+    "OK": "OK",
+    "Portrait Hard Subtitle Translation Placement": "Размещение перевода для вшитых субтитров",
+    "Auto (smart)": "Авто (умно)",
+    "Always Above Hard Subtitle": "Всегда над вшитыми субтитрами",
+    "Always Below Hard Subtitle": "Всегда под вшитыми субтитрами",
+    "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "Авто: умное размещение по позиции вшитых субтитров; перевод ставится выше, если субтитры близко к нижнему краю"
 }

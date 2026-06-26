@@ -122,5 +122,10 @@
     "Task completed!": "¡Tarea completada!",
     "Task stopped": "Tarea detenida",
     "Task error": "Error en la tarea",
-    "OK": "OK"
+    "OK": "OK",
+    "Portrait Hard Subtitle Translation Placement": "Ubicación de la traducción de subtítulos incrustados",
+    "Auto (smart)": "Automático (inteligente)",
+    "Always Above Hard Subtitle": "Siempre encima del subtítulo incrustado",
+    "Always Below Hard Subtitle": "Siempre debajo del subtítulo incrustado",
+    "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "Automático: ubicación inteligente según la posición del subtítulo incrustado; coloca la traducción encima cuando está cerca de la parte inferior"
 }

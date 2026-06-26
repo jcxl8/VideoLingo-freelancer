@@ -12,6 +12,7 @@ class PortraitSidebarConfigTest(unittest.TestCase):
         "portrait_hardsub_translation_font_size",
         "portrait_bilingual_offset",
         "portrait_hardsub_translation_offset",
+        "portrait_hardsub_placement",
         "portrait_watermark_font_size",
         "portrait_watermark_offset",
     )
@@ -22,6 +23,10 @@ class PortraitSidebarConfigTest(unittest.TestCase):
         "Portrait Bilingual Offset",
         "Portrait Hard Subtitle Translation Font Size",
         "Portrait Hard Subtitle Translation Offset",
+        "Portrait Hard Subtitle Translation Placement",
+        "Auto (smart)",
+        "Always Above Hard Subtitle",
+        "Always Below Hard Subtitle",
         "Portrait Watermark Font Size",
         "Portrait Watermark Offset",
         "Portrait font sizes use a 576px-wide reference",
@@ -44,6 +49,20 @@ class PortraitSidebarConfigTest(unittest.TestCase):
         for label in self.REQUIRED_LABELS:
             self.assertIn(label, self.en)
             self.assertIn(label, self.zh)
+
+    def test_placement_labels_exist_in_all_display_languages(self):
+        required = {
+            "Portrait Hard Subtitle Translation Placement",
+            "Auto (smart)",
+            "Always Above Hard Subtitle",
+            "Always Below Hard Subtitle",
+            "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom",
+        }
+        for code in ("en", "zh-CN", "es", "ru", "fr", "de", "it", "ja"):
+            with self.subTest(code=code):
+                catalog = json.loads(Path(f"translations/{code}.json").read_text(encoding="utf-8"))
+                for key in required:
+                    self.assertIn(key, catalog)
 
     def test_all_portrait_keys_are_persisted_and_invalidate_preview(self):
         history_block = self.sidebar[

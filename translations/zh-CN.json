@@ -356,5 +356,10 @@
   "Landscape Source Font Size": "横屏原文字号",
   "Landscape Translation Font Size": "横屏译文字号",
   "Reference font size at 1080p; scales with video height": "以 1080p 为基准字号，并随视频高度等比缩放",
-  "No original video found in this history project": "此历史项目中未找到原视频"
+  "No original video found in this history project": "此历史项目中未找到原视频",
+  "Portrait Hard Subtitle Translation Placement": "硬字幕译文放置",
+  "Auto (smart)": "自动（智能）",
+  "Always Above Hard Subtitle": "始终位于硬字幕上方",
+  "Always Below Hard Subtitle": "始终位于硬字幕下方",
+  "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "自动：根据硬字幕位置智能选择 — 当硬字幕靠近视频底部时，译文自动放在其上方"
 }

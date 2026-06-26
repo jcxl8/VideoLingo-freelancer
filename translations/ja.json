@@ -122,5 +122,10 @@
     "Task completed!": "タスク完了！",
     "Task stopped": "タスクが停止されました",
     "Task error": "タスクエラー",
-    "OK": "OK"
+    "OK": "OK",
+    "Portrait Hard Subtitle Translation Placement": "焼き込み字幕翻訳の配置",
+    "Auto (smart)": "自動（スマート）",
+    "Always Above Hard Subtitle": "常に焼き込み字幕の上",
+    "Always Below Hard Subtitle": "常に焼き込み字幕の下",
+    "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "自動：焼き込み字幕の位置に基づいてスマートに配置します。下部に近い場合は翻訳を上に配置します"
 }

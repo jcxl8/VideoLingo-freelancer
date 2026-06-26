@@ -244,7 +244,7 @@ def _render_api_profile_manager(api_role):
             label = _format_api_profile(profile_id, profile)
             c1, c2 = st.columns([12, 1])
             with c1:
-                if st.button(label, key=f"{api_role}_profile_{profile_id}", use_container_width=True,
+                if st.button(label, key=f"{api_role}_profile_{profile_id}", width="stretch",
                              help=t("Click to load this API profile")):
                     if _apply_api_profile(api_role, profile_id, profile):
                         st.session_state[f"{api_role}_auto_test_pending"] = True
@@ -348,7 +348,7 @@ def _render_lang_profile_manager():
             label = _format_lang_profile(profile_id, profile)
             c1, c2 = st.columns([12, 1])
             with c1:
-                if st.button(label, key=f"lang_profile_{profile_id}", use_container_width=True,
+                if st.button(label, key=f"lang_profile_{profile_id}", width="stretch",
                              help=t("Click to load this language pair")):
                     if _apply_lang_profile(profile_id, profile):
                         st.toast(t("Language pair loaded"), icon="✅")
@@ -386,7 +386,7 @@ def _seed_config_history_once():
         "translator_api.key", "translator_api.base_url", "translator_api.model", "translator_api.llm_support_json",
         "translator_refine_with_workflow", "enable_subtitle_proofread",
         "whisper.language", "whisper.runtime", "whisper.model",
-        "target_language", "demucs", "burn_subtitles", "subtitle_layout", "subtitle_layout_profile", "subtitle_hardsub_strategy", "hardsub_translation_offset", "bilingual_translation_offset", "watermark_enabled", "watermark_text", "watermark_font_size", "watermark_offset", "portrait_source_font_size", "portrait_translation_font_size", "portrait_hardsub_translation_font_size", "portrait_bilingual_offset", "portrait_hardsub_translation_offset", "portrait_watermark_font_size", "portrait_watermark_offset", "landscape_source_font_size", "landscape_translation_font_size", "landscape_bilingual_translation_offset", "landscape_hardsub_translation_offset", "landscape_watermark_font_size", "landscape_watermark_offset", "translation_max_workers",
+        "target_language", "demucs", "burn_subtitles", "subtitle_layout", "subtitle_layout_profile", "subtitle_hardsub_strategy", "hardsub_translation_offset", "bilingual_translation_offset", "watermark_enabled", "watermark_text", "watermark_font_size", "watermark_offset", "portrait_source_font_size", "portrait_translation_font_size", "portrait_hardsub_translation_font_size", "portrait_bilingual_offset", "portrait_hardsub_translation_offset", "portrait_hardsub_placement", "portrait_watermark_font_size", "portrait_watermark_offset", "landscape_source_font_size", "landscape_translation_font_size", "landscape_bilingual_translation_offset", "landscape_hardsub_translation_offset", "landscape_watermark_font_size", "landscape_watermark_offset", "translation_max_workers",
         "tts_method", "sf_fish_tts.api_key", "sf_fish_tts.mode", "sf_fish_tts.voice",
         "openai_tts.api_key", "openai_tts.voice",
         "fish_tts.api_key", "fish_tts.character",
@@ -733,6 +733,31 @@ def page_setting():
                 if portrait_hardsub_offset != int(load_key("portrait_hardsub_translation_offset")):
                     update_key("portrait_hardsub_translation_offset", portrait_hardsub_offset)
                     st.rerun()
+
+            try:
+                current_placement = load_key("portrait_hardsub_placement")
+            except KeyError:
+                current_placement = "auto"
+                update_key("portrait_hardsub_placement", current_placement)
+            placement_options = ["auto", "above", "below"]
+            placement_labels = {
+                "auto": t("Auto (smart)"),
+                "above": t("Always Above Hard Subtitle"),
+                "below": t("Always Below Hard Subtitle"),
+            }
+            if current_placement not in placement_options:
+                current_placement = "auto"
+            selected_placement = st.selectbox(
+                t("Portrait Hard Subtitle Translation Placement"),
+                placement_options,
+                index=placement_options.index(current_placement),
+                format_func=lambda value: placement_labels.get(value, value),
+                key="portrait_hardsub_placement_select",
+                help=t("\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom"),
+            )
+            if selected_placement != current_placement:
+                update_key("portrait_hardsub_placement", selected_placement)
+                st.rerun()
 
             p_wm_c1, p_wm_c2 = st.columns(2)
             with p_wm_c1:

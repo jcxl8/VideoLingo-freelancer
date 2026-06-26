@@ -1498,6 +1498,27 @@ def align_timestamp(
             if not en_next or not en_next[0].islower():
                 continue
 
+            # Fix short orphan words at entry boundaries (for example,
+            # "...month he" / "kept calling..."). If EN_i ends with a very
+            # short lowercase word and EN_next starts lowercase, pull the
+            # orphan word into EN_next. Only apply when EN_i keeps enough words.
+            en_words_i = en_i.split()
+            if (
+                len(en_words_i) >= 4
+                and en_words_i[-1].islower()
+                and len(en_words_i[-1]) <= 3
+                and en_next
+                and en_next[0].islower()
+            ):
+                orphan = en_words_i[-1]
+                en_i_new = " ".join(en_words_i[:-1]).strip().rstrip(",")
+                en_next_new = (orphan + " " + en_next).strip()
+                if en_i_new and en_next_new:
+                    parsed[i]["en"] = en_i_new
+                    parsed[i + 1]["en"] = en_next_new
+                    fixed += 1
+                    continue
+
             # Compare proportions: does CN_i cover more of the total than EN_i?
             total_en = len(en_i) + len(en_next)
             total_cn = len(cn_i) + len(cn_next)
@@ -1524,6 +1545,21 @@ def align_timestamp(
                 if cumulative >= target_en_i_len:
                     split_at = j + 1
                     break
+
+            # Avoid breaking multi-word proper nouns across entries
+            # (for example "Hong | Kong", "San | Francisco", "New | York").
+            if 0 < split_at < len(words):
+                w_prev = words[split_at - 1]
+                w_next = words[split_at]
+                if w_prev and w_next and w_prev[0].isupper() and w_next[0].isupper():
+                    proper_start = split_at - 1
+                    while proper_start > 0:
+                        candidate = words[proper_start - 1]
+                        if candidate and candidate[0].isupper():
+                            proper_start -= 1
+                        else:
+                            break
+                    split_at = proper_start
 
             if split_at >= len(words):
                 continue
