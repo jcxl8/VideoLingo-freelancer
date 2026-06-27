@@ -54,6 +54,27 @@ class ReadmeNavigationTest(unittest.TestCase):
             with self.subTest(item=item):
                 self.assertIn(item, text)
 
+    def test_root_readme_links_optional_macos_launchagent_guide(self):
+        text = ROOT.joinpath("README.md").read_text(encoding="utf-8")
+        guide = ROOT / "docs" / "macos-launch-agent.md"
+        self.assertTrue(guide.is_file())
+        self.assertIn("Optional: macOS LaunchAgent auto-start", text)
+        self.assertIn("docs/macos-launch-agent.md", text)
+
+        guide_text = guide.read_text(encoding="utf-8")
+        for item in (
+            "not required",
+            "launchctl bootstrap",
+            "launchctl bootout",
+            "WorkingDirectory",
+            "StandardOutPath",
+            "StandardErrorPath",
+            "Hy-MT2",
+            "do not commit",
+        ):
+            with self.subTest(item=item):
+                self.assertIn(item, guide_text)
+
     def test_all_readmes_document_uv_python_and_ffmpeg_installation(self):
         pages = [ROOT / "README.md"] + [
             ROOT / "translations" / f"README.{code}.md"

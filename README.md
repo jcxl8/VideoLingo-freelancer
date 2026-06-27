@@ -135,6 +135,10 @@ Start it later with the environment-bound interpreter:
 
 Windows users can also double-click `OneKeyStart_uv.bat` after setup.
 
+### Optional: macOS LaunchAgent auto-start
+
+For a Mac mini or always-on macOS workstation, you can start VideoLingo-Freelancer automatically after login with a user LaunchAgent. This is not required for normal use; the manual Streamlit command above remains the recommended default. See [`docs/macos-launch-agent.md`](docs/macos-launch-agent.md) for a portable plist template, log paths, load/unload commands, and an optional Hy-MT2 local translator service example.
+
 ### Manual Python 3.12 fallback
 
 If uv cannot be used, create a Python 3.12 virtual environment yourself and run the same installer:
