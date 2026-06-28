@@ -48,6 +48,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+.superpowers/
 
 # Translations
 *.mo
@@ -177,6 +178,7 @@ config_history.json
 /work/
 /docs/superpowers/plans/*.md
 /docs/superpowers/specs/*.md
+!/docs/superpowers/specs/2026-06-28-video-localization-portfolio-design.md
 .streamlit/secrets.toml
 .env*
 !.env.example
