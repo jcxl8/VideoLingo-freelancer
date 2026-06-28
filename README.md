@@ -26,6 +26,13 @@ Automate an installed VideoLingo-Freelancer workflow from **Codex, Claude Code, 
 
 The Skill does not include this application’s source code, models, or credentials. Install and configure VideoLingo-Freelancer first, then connect the Skill to that existing checkout.
 
+## 💼 Personal Portfolio Website
+
+This repository also includes an English-first personal video localization portfolio site design and docs-page implementation for presenting freelance subtitle translation, hard-sub rendering, dubbing, vertical-video adaptation, and the local AI workflow behind VideoLingo-Freelancer.
+
+- Portfolio homepage source: [`docs/pages/index.en-US.mdx`](docs/pages/index.en-US.mdx)
+- Design spec: [`docs/superpowers/specs/2026-06-28-video-localization-portfolio-design.md`](docs/superpowers/specs/2026-06-28-video-localization-portfolio-design.md)
+
 ## ✨ Key Features
 
 | Area | Capabilities |
