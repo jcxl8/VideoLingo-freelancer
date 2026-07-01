@@ -1104,10 +1104,60 @@ def _restore_missing_source_question_boundaries(source_text):
 
 def _source_sentence_parts_for_display(source_text):
     source_text = _restore_missing_source_question_boundaries(source_text)
-    parts = _split_source_by_punctuation(source_text)
+    parts = []
+    for part in _split_source_by_sentence_punctuation(source_text):
+        parts.extend(_split_repeated_parallel_markers(part, ("how much", "what")))
     if len(parts) <= 1:
         return []
     return parts
+
+def _split_source_by_sentence_punctuation(source_text):
+    text = re.sub(r"\s+", " ", str(source_text or "").strip())
+    if not text:
+        return []
+
+    pieces = []
+    last = 0
+    for match in re.finditer(r"[.!?！？]+|,\s+(?=(?:how|what|why|where|when|who)\b)", text, re.I):
+        end = match.end()
+        leading_word_count = len(LATIN_WORD_RE.findall(text[last:match.start()]))
+        if match.group(0).lstrip().startswith(",") and leading_word_count > 5:
+            continue
+        piece = text[last:end].strip()
+        if piece:
+            pieces.append(piece)
+        last = end
+    tail = text[last:].strip()
+    if tail:
+        pieces.append(tail)
+    return pieces
+
+def _split_repeated_parallel_markers(text, markers):
+    text = re.sub(r"\s+", " ", str(text or "").strip())
+    if not text:
+        return []
+
+    marker_positions = []
+    for marker in markers:
+        matches = list(re.finditer(rf"\b{re.escape(marker)}\b", text, re.I))
+        if len(matches) >= 2:
+            marker_positions.extend(match.start() for match in matches[1:])
+    if not marker_positions:
+        return [text]
+
+    boundaries = [0] + sorted(set(marker_positions)) + [len(text)]
+    parts = [
+        text[boundaries[index]:boundaries[index + 1]].strip(" ,，")
+        for index in range(len(boundaries) - 1)
+    ]
+    return [part for part in parts if part]
+
+def _has_repeated_parallel_markers(text, markers=("how much", "what")):
+    text = re.sub(r"\s+", " ", str(text or "").strip())
+    return any(
+        len(list(re.finditer(rf"\b{re.escape(marker)}\b", text, re.I))) >= 2
+        for marker in markers
+    )
 
 def _split_translation_by_sentence_boundaries(translation):
     text = re.sub(r"\s+", " ", str(translation or "").strip())
@@ -1117,7 +1167,7 @@ def _split_translation_by_sentence_boundaries(translation):
     parts = []
     for space_part in _split_on_cjk_semantic_spaces(text) or [text]:
         start = 0
-        for match in re.finditer(r"[，,。！？!?；;、]+", space_part):
+        for match in re.finditer(r"[，,。.!？?！；;、]+", space_part):
             end = match.end()
             part = space_part[start:end].strip(" ，,。；;：:、")
             if part:
@@ -1126,7 +1176,15 @@ def _split_translation_by_sentence_boundaries(translation):
         tail = space_part[start:].strip(" ，,。；;：:、")
         if tail:
             parts.append(tail)
-    return [part for part in parts if part]
+    split_parts = []
+    for part in parts:
+        split_parts.extend(
+            _split_repeated_parallel_markers(
+                part,
+                ("o que", "quanto", "how much", "what"),
+            )
+        )
+    return [part for part in split_parts if part]
 
 def _translation_parts_matching_source(translation, part_count):
     if part_count <= 1:
@@ -1352,7 +1410,10 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
         )
         source_parts = []
         duration = float(display_timestamp[1]) - float(display_timestamp[0])
-        if not trans_parts and duration >= 2.4 and _is_portrait_video(target_width, target_height):
+        allow_source_split = _is_portrait_video(
+            target_width, target_height
+        ) or _has_repeated_parallel_markers(row.get("Source", ""))
+        if not trans_parts and duration >= 2.4 and allow_source_split:
             source_parts = _source_sentence_parts_for_display(row.get("Source", ""))
             trans_parts = _translation_parts_matching_source(
                 row.get("Translation", ""),
@@ -1408,6 +1469,8 @@ def _repair_adjacent_source_phrase_splits(df_trans_time):
                 for offset in range(window_size)
             ]
             if any(not value for value in source_values):
+                continue
+            if re.search(r"[.!?]\s*$", source_values[0]):
                 continue
             if not re.search(r"[.,;:!?]\s+\S", source_values[0]):
                 continue

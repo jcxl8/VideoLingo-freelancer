@@ -63,6 +63,76 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
         self.assertEqual(result.iloc[0]["display_timestamp"][1], result.iloc[1]["display_timestamp"][0])
         self.assertEqual(result.iloc[1]["display_timestamp"][1], result.iloc[2]["display_timestamp"][0])
 
+    def test_parallel_how_much_clause_splits_after_sentence_boundary(self):
+        df = pd.DataFrame([
+            {
+                "Source": (
+                    "We'll find out, I guess. But I think one thing that is very different "
+                    "is how much people care about other people how much people want to "
+                    "interact with other people"
+                ),
+                "Translation": (
+                    "Acho que vamos descobrir. Mas acho que algo muito diferente é o quanto "
+                    "pessoas se importam com outras, quanto querem interagir"
+                ),
+                "display_timestamp": (1.88, 8.92),
+                "speech_timestamp": (1.88, 8.92),
+            }
+        ])
+
+        result = _split_long_display_subtitles(df, target_width=1920, target_height=1080)
+        result = _repair_adjacent_source_phrase_splits(result)
+
+        self.assertEqual(len(result), 3)
+        self.assertEqual(
+            result["Source"].tolist(),
+            [
+                "We'll find out, I guess.",
+                "But I think one thing that is very different is how much people care about other people",
+                "how much people want to interact with other people",
+            ],
+        )
+        self.assertEqual(result.iloc[0]["display_timestamp"][0], 1.88)
+        self.assertEqual(result.iloc[-1]["display_timestamp"][1], 8.92)
+        self.assertEqual(result.iloc[0]["display_timestamp"][1], result.iloc[1]["display_timestamp"][0])
+        self.assertEqual(result.iloc[1]["display_timestamp"][1], result.iloc[2]["display_timestamp"][0])
+
+    def test_parallel_what_clause_splits_after_sentence_boundary(self):
+        df = pd.DataFrame([
+            {
+                "Source": (
+                    "We can imagine and do all sorts of new things. We still have to figure "
+                    "out what to do what other people want what other people will find useful."
+                ),
+                "Translation": (
+                    "Poderemos criar todo tipo de novidade. Temos que descobrir o que fazer, "
+                    "o que outros querem e o que acharão útil."
+                ),
+                "display_timestamp": (17.56, 23.52),
+                "speech_timestamp": (17.56, 23.18),
+            }
+        ])
+
+        result = _split_long_display_subtitles(df, target_width=1920, target_height=1080)
+
+        self.assertEqual(len(result), 4)
+        self.assertEqual(
+            result["Source"].tolist(),
+            [
+                "We can imagine and do all sorts of new things.",
+                "We still have to figure out what to do",
+                "what other people want",
+                "what other people will find useful.",
+            ],
+        )
+        self.assertEqual(result.iloc[0]["display_timestamp"][0], 17.56)
+        self.assertEqual(result.iloc[-1]["display_timestamp"][1], 23.52)
+        for index in range(len(result) - 1):
+            self.assertEqual(
+                result.iloc[index]["display_timestamp"][1],
+                result.iloc[index + 1]["display_timestamp"][0],
+            )
+
     def test_long_silence_does_not_extend_already_readable_subtitle(self):
         df_words = pd.DataFrame(
             [
