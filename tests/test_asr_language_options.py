@@ -15,7 +15,7 @@ class AsrLanguageOptionsTest(unittest.TestCase):
 
         self.assertEqual(
             [value for _, value in TARGET_LANGUAGE_OPTIONS],
-            ["English", "简体中文", "日语", "韩语", "德语", "俄语", "葡萄牙语"],
+            ["English", "简体中文", "西班牙语", "日语", "韩语", "德语", "俄语", "葡萄牙语"],
         )
 
     def test_unknown_asr_language_uses_manual_input_state(self):
