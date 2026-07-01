@@ -17,6 +17,8 @@ DEFAULT_SPACY_MODELS = (
     "en_core_web_md",
     "zh_core_web_md",
     "es_core_news_md",
+    "ja_core_news_md",
+    "ko_core_news_md",
     "de_core_news_md",
     "ru_core_news_md",
     "pt_core_news_md",
