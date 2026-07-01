@@ -10,6 +10,8 @@ DISPLAY_LANGUAGES = {
     "🇩🇪 Deutsch": "de",
     "🇮🇹 Italiano": "it",
     "🇯🇵 日本語": "ja",
+    "🇰🇷 한국어": "ko",
+    "🇵🇹 Português": "pt",
 }
 
 # Load the language file based on user selection

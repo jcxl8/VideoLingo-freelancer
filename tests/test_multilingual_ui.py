@@ -13,6 +13,8 @@ EXPECTED_LANGUAGES = {
     "🇩🇪 Deutsch": "de",
     "🇮🇹 Italiano": "it",
     "🇯🇵 日本語": "ja",
+    "🇰🇷 한국어": "ko",
+    "🇵🇹 Português": "pt",
 }
 
 
@@ -53,6 +55,31 @@ class MultilingualUiTest(unittest.TestCase):
                 catalog = translations.load_translations(code)
                 self.assertIsInstance(catalog, dict)
                 self.assertTrue(catalog, code)
+
+    def test_display_languages_cover_configured_asr_and_target_presets(self):
+        from core.st_utils.sidebar_setting import ASR_LANGUAGE_OPTIONS, TARGET_LANGUAGE_OPTIONS
+
+        display_codes = set(translations.DISPLAY_LANGUAGES.values())
+        normalized_display_codes = display_codes | {"zh" if "zh-CN" in display_codes else ""}
+        asr_codes = {code for _, code, _ in ASR_LANGUAGE_OPTIONS if code != "auto"}
+        target_label_to_code = {
+            "English": "en",
+            "简体中文": "zh",
+            "西班牙语": "es",
+            "日语": "ja",
+            "韩语": "ko",
+            "德语": "de",
+            "俄语": "ru",
+            "葡萄牙语": "pt",
+        }
+        target_codes = {
+            target_label_to_code[target]
+            for _, target in TARGET_LANGUAGE_OPTIONS
+            if target in target_label_to_code
+        }
+
+        self.assertEqual(asr_codes - normalized_display_codes, set())
+        self.assertEqual(target_codes - normalized_display_codes, set())
 
     def test_streamlit_buttons_use_current_width_api(self):
         for path in ("st.py", "core/st_utils/download_video_section.py", "core/st_utils/sidebar_setting.py"):
