@@ -1,8 +1,11 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 
 from core._6_gen_sub import (
+    align_timestamp,
     _drop_likely_standalone_ack_hallucinations,
     _merge_short_adjacent_subtitles,
     _repair_adjacent_source_phrase_splits,
@@ -33,6 +36,77 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertIn("war zone", result.iloc[0]["Source"])
         self.assertEqual(result.iloc[0]["Translation"], df.iloc[0]["Translation"])
+
+    def test_source_sentence_boundaries_split_matching_translation_parts(self):
+        df = pd.DataFrame([
+            {
+                "Source": "Oh my god, how did you do that? it's easier than it looks.",
+                "Translation": "天哪 你怎么做到的？其实很容易的",
+                "display_timestamp": (1.16, 12.72),
+                "speech_timestamp": (1.16, 8.72),
+            }
+        ])
+
+        result = _split_long_display_subtitles(df, target_width=576, target_height=1024)
+
+        self.assertEqual(len(result), 3)
+        self.assertEqual(
+            result["Source"].tolist(),
+            ["Oh my god,", "how did you do that?", "it's easier than it looks."],
+        )
+        self.assertEqual(
+            result["Translation"].tolist(),
+            ["天哪", "你怎么做到的？", "其实很容易的"],
+        )
+        self.assertEqual(result.iloc[0]["display_timestamp"][0], 1.16)
+        self.assertEqual(result.iloc[-1]["display_timestamp"][1], 12.72)
+        self.assertEqual(result.iloc[0]["display_timestamp"][1], result.iloc[1]["display_timestamp"][0])
+        self.assertEqual(result.iloc[1]["display_timestamp"][1], result.iloc[2]["display_timestamp"][0])
+
+    def test_long_silence_does_not_extend_already_readable_subtitle(self):
+        df_words = pd.DataFrame(
+            [
+                ("Oh", 1.16, 1.68),
+                ("my", 1.68, 2.20),
+                ("god,", 2.20, 2.82),
+                ("how", 3.14, 4.32),
+                ("did", 4.32, 4.54),
+                ("you", 4.54, 4.66),
+                ("do", 4.66, 4.94),
+                ("that?", 4.94, 5.22),
+                ("it's", 6.22, 7.38),
+                ("easier", 7.38, 8.08),
+                ("than", 8.08, 8.30),
+                ("it", 8.30, 8.40),
+                ("looks.", 8.40, 8.72),
+                ("No,", 13.66, 14.18),
+                ("I", 14.44, 14.68),
+                ("don't", 14.68, 14.90),
+                ("think", 14.90, 15.02),
+                ("so.", 15.02, 15.18),
+            ],
+            columns=["text", "start", "end"],
+        )
+        df_translate = pd.DataFrame([
+            {
+                "Source": "Oh my god, how did you do that? it's easier than it looks.",
+                "Translation": "天哪，你怎么做到的？其实很容易的",
+            },
+            {"Source": "No, I don't think so.", "Translation": "不，我不觉得"},
+        ])
+
+        with tempfile.TemporaryDirectory() as directory:
+            align_timestamp(
+                df_words,
+                df_translate,
+                [("src.srt", ["Source"])],
+                directory,
+            )
+
+            exported = (Path(directory) / "src.srt").read_text(encoding="utf-8")
+
+        self.assertIn("00:00:01,160 --> 00:00:08,970", exported)
+        self.assertNotIn("00:00:01,160 --> 00:00:12,720", exported)
 
     def test_long_translation_is_split_into_multiple_timed_rows(self):
         df = pd.DataFrame([
