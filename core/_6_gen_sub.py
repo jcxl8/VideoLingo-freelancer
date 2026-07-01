@@ -963,7 +963,9 @@ def _apply_word_anchored_display_timing(df_trans_time):
                 speech_start + required_duration,
             )
             target_end = min(target_end, safe_end)
-            long_silence_end = _long_silence_display_end(row, speech_end, next_start)
+            long_silence_end = None
+            if speech_duration + 0.02 < required_duration:
+                long_silence_end = _long_silence_display_end(row, speech_end, next_start)
             if long_silence_end is not None and long_silence_end > target_end:
                 target_end = long_silence_end
             if target_end > speech_end:
@@ -1085,6 +1087,56 @@ def _split_source_by_punctuation(source_text):
     if tail:
         pieces.append(tail)
     return pieces
+
+def _restore_missing_source_question_boundaries(source_text):
+    text = re.sub(r"\s+", " ", str(source_text or "").strip())
+    if not text:
+        return ""
+
+    question_patterns = [
+        r"\b(how\s+did\s+you\s+do\s+that)\s+(?=(?:it'?s|that'?s|this|there|i|you|he|she|we|they)\b)",
+        r"\b(what\s+(?:are|were|is|was|do|does|did|can|could|would|should|will)\s+[^.!?]{2,80}?)\s+(?=(?:it'?s|that'?s|this|there|i|you|he|she|we|they)\b)",
+        r"\b(why\s+(?:are|were|is|was|do|does|did|can|could|would|should|will)\s+[^.!?]{2,80}?)\s+(?=(?:it'?s|that'?s|this|there|i|you|he|she|we|they)\b)",
+    ]
+    for pattern in question_patterns:
+        text = re.sub(pattern, lambda match: match.group(1).rstrip(" ?") + "? ", text, flags=re.I)
+    return text
+
+def _source_sentence_parts_for_display(source_text):
+    source_text = _restore_missing_source_question_boundaries(source_text)
+    parts = _split_source_by_punctuation(source_text)
+    if len(parts) <= 1:
+        return []
+    return parts
+
+def _split_translation_by_sentence_boundaries(translation):
+    text = re.sub(r"\s+", " ", str(translation or "").strip())
+    if not text:
+        return []
+
+    parts = []
+    for space_part in _split_on_cjk_semantic_spaces(text) or [text]:
+        start = 0
+        for match in re.finditer(r"[，,。！？!?；;、]+", space_part):
+            end = match.end()
+            part = space_part[start:end].strip(" ，,。；;：:、")
+            if part:
+                parts.append(part)
+            start = end
+        tail = space_part[start:].strip(" ，,。；;：:、")
+        if tail:
+            parts.append(tail)
+    return [part for part in parts if part]
+
+def _translation_parts_matching_source(translation, part_count):
+    if part_count <= 1:
+        return []
+    parts = _split_translation_by_sentence_boundaries(translation)
+    if len(parts) < part_count:
+        return []
+    if len(parts) > part_count:
+        parts = _merge_source_parts_to_count(parts, part_count)
+    return parts if len(parts) == part_count else []
 
 def _merge_source_parts_to_count(parts, part_count):
     parts = [part.strip() for part in parts if part and part.strip()]
@@ -1298,11 +1350,22 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
             target_width,
             target_height,
         )
+        source_parts = []
+        duration = float(display_timestamp[1]) - float(display_timestamp[0])
+        if not trans_parts and duration >= 2.4 and _is_portrait_video(target_width, target_height):
+            source_parts = _source_sentence_parts_for_display(row.get("Source", ""))
+            trans_parts = _translation_parts_matching_source(
+                row.get("Translation", ""),
+                len(source_parts),
+            )
+            if not trans_parts:
+                source_parts = []
         if not trans_parts:
             rows.append(row.to_dict())
             continue
 
-        source_parts = _source_parts_by_word_count(row.get("Source", ""), len(trans_parts))
+        if not source_parts:
+            source_parts = _source_parts_by_word_count(row.get("Source", ""), len(trans_parts))
         weights = [
             max(_text_weight(source_parts[index]), _text_weight(trans_parts[index]))
             for index in range(len(trans_parts))
