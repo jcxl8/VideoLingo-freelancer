@@ -1,4 +1,10 @@
 import unittest
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class AsrLanguageOptionsTest(unittest.TestCase):
@@ -17,6 +23,20 @@ class AsrLanguageOptionsTest(unittest.TestCase):
             [value for _, value in TARGET_LANGUAGE_OPTIONS],
             ["English", "简体中文", "西班牙语", "日语", "韩语", "德语", "俄语", "葡萄牙语"],
         )
+
+    def test_asr_options_have_spacy_model_mappings(self):
+        from core.st_utils.sidebar_setting import ASR_LANGUAGE_OPTIONS
+
+        config = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
+        spacy_model_map = config.get("spacy_model_map", {})
+
+        missing = [
+            code
+            for _, code, _ in ASR_LANGUAGE_OPTIONS
+            if code != "auto" and code not in spacy_model_map
+        ]
+
+        self.assertEqual(missing, [])
 
     def test_unknown_asr_language_uses_manual_input_state(self):
         from core.st_utils.sidebar_setting import (
