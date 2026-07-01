@@ -1724,9 +1724,6 @@ def align_timestamp(
         os.makedirs(output_dir, exist_ok=True)
         for filename, columns in subtitle_output_configs:
             subtitle_str = generate_subtitle_string(df_trans_time, columns)
-            # Align English splits with Chinese boundaries for bilingual files
-            if len(columns) == 2:
-                subtitle_str = _align_bilingual_english(subtitle_str)
             with open(os.path.join(output_dir, filename), 'w', encoding='utf-8') as f:
                 f.write(subtitle_str)
 

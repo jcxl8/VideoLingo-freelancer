@@ -14,6 +14,47 @@ from core._6_gen_sub import (
 
 
 class LongSubtitleTimelineSplitTest(unittest.TestCase):
+    def test_trans_src_export_preserves_canonical_source_text(self):
+        df_words = pd.DataFrame(
+            [
+                ("Yes.", 0.0, 0.2),
+                ("Too", 0.2, 0.4),
+                ("many", 0.4, 0.6),
+                ("people", 0.6, 0.8),
+                ("sacrificed", 0.8, 1.0),
+                ("so", 1.0, 1.2),
+                ("that", 1.2, 1.4),
+                ("I", 1.4, 1.6),
+                ("could", 1.6, 1.8),
+                ("be", 1.8, 2.0),
+                ("here.", 2.0, 2.2),
+                ("The", 3.0, 3.2),
+                ("next", 3.2, 3.4),
+                ("line", 3.4, 3.6),
+                ("stays", 3.6, 3.8),
+                ("normal.", 3.8, 4.0),
+            ],
+            columns=["text", "start", "end"],
+        )
+        source = "Yes. Too many people sacrificed so that I could be here."
+        translation = "是的 太多人为了我能站在这里而牺牲了"
+        df_translate = pd.DataFrame([
+            {"Source": source, "Translation": translation},
+            {"Source": "The next line stays normal.", "Translation": "下一句保持正常"},
+        ])
+
+        with tempfile.TemporaryDirectory() as directory:
+            align_timestamp(
+                df_words,
+                df_translate,
+                [("trans_src.srt", ["Translation", "Source"])],
+                directory,
+            )
+
+            exported = (Path(directory) / "trans_src.srt").read_text(encoding="utf-8")
+
+        self.assertIn(f"{translation}\n{source}", exported)
+
     def test_landscape_comfortable_cps_does_not_split_on_chinese_spaces(self):
         df = pd.DataFrame([
             {
