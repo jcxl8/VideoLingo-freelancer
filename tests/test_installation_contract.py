@@ -26,6 +26,29 @@ class InstallationContractTest(unittest.TestCase):
         )
         self.assertIn('@except_handler("Failed to install PyTorch", retry=1, delay=5)', text)
 
+    def test_installer_downloads_default_spacy_language_models(self):
+        text = (ROOT / "install.py").read_text(encoding="utf-8")
+        for model in (
+            "en_core_web_md",
+            "zh_core_web_md",
+            "de_core_news_md",
+            "ru_core_news_md",
+            "pt_core_news_md",
+        ):
+            self.assertIn(model, text)
+        self.assertIn("def install_default_spacy_models(", text)
+        install_call = text.rindex("install_requirements()")
+        spacy_call = text.rindex("install_default_spacy_models()")
+        ffmpeg_call = text.rindex("check_ffmpeg()")
+        self.assertLess(
+            install_call,
+            spacy_call,
+        )
+        self.assertLess(
+            spacy_call,
+            ffmpeg_call,
+        )
+
     def test_apple_silicon_mlx_dependency_is_conditional(self):
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
         self.assertIn(

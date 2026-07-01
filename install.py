@@ -13,6 +13,14 @@ __     ___     _            _     _
                                           |___/        
 """
 
+DEFAULT_SPACY_MODELS = (
+    "en_core_web_md",
+    "zh_core_web_md",
+    "de_core_news_md",
+    "ru_core_news_md",
+    "pt_core_news_md",
+)
+
 def install_package(*packages):
     subprocess.check_call([sys.executable, "-m", "pip", "install", *packages])
 
@@ -164,6 +172,23 @@ def _detect_cuda_index():
     # Default: cu126 is the broadest CUDA 12 index for PyTorch 2.8
     return f"{INDEX}/cu126"
 
+def install_default_spacy_models():
+    import spacy
+    from rich.console import Console
+    from rich.panel import Panel
+
+    console = Console()
+    for model in DEFAULT_SPACY_MODELS:
+        try:
+            spacy.load(model)
+            console.print(f"[green]✅ spaCy model already installed:[/green] {model}")
+            continue
+        except OSError:
+            pass
+
+        console.print(Panel(f"Installing spaCy model: {model}", style="cyan"))
+        subprocess.check_call([sys.executable, "-m", "spacy", "download", model])
+
 def main(argv=None):
     args = parse_args(argv)
     require_python_312()
@@ -265,6 +290,7 @@ def main(argv=None):
     if not args.skip_torch:
         install_pytorch()
     install_requirements()
+    install_default_spacy_models()
     check_ffmpeg()
     
     # First panel with installation complete and startup command
