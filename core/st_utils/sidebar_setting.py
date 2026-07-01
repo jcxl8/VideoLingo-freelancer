@@ -18,20 +18,25 @@ ASR_LANGUAGE_OPTIONS = [
     ("🇩🇪 Deutsch", "de", "德语"),
     ("🇮🇹 Italiano", "it", "意大利语"),
     ("🇯🇵 日本語", "ja", "日语"),
+    ("🇰🇷 한국어", "ko", "韩语"),
 ]
 
 TARGET_LANGUAGE_OPTIONS = [
     ("🇺🇸 English", "English"),
     ("🇨🇳 简体中文", "简体中文"),
+    ("🇯🇵 日本語", "日语"),
+    ("🇰🇷 한국어", "韩语"),
     ("🇩🇪 Deutsch", "德语"),
     ("🇷🇺 Русский", "俄语"),
     ("🇵🇹 Português", "葡萄牙语"),
 ]
+MANUAL_LANGUAGE_LABEL = "✍️ 手动输入"
+MANUAL_LANGUAGE_VALUE = "__manual__"
 
 
 def _normalize_asr_language(value):
-    supported_codes = {code for _, code, _ in ASR_LANGUAGE_OPTIONS}
-    return value if value in supported_codes else "auto"
+    value = str(value or "").strip()
+    return value or "auto"
 
 def _widget_key(config_key, suffix):
     return f"config_{config_key.replace('.', '_')}_{suffix}"
@@ -374,6 +379,22 @@ def _format_target_language(value):
     label_by_target = {target: label for label, target in TARGET_LANGUAGE_OPTIONS}
     return label_by_target.get(value, str(value))
 
+def _source_language_select_state(current_value):
+    labels = [label for label, _, _ in ASR_LANGUAGE_OPTIONS] + [MANUAL_LANGUAGE_LABEL]
+    values = [code for _, code, _ in ASR_LANGUAGE_OPTIONS] + [MANUAL_LANGUAGE_VALUE]
+    current_value = _normalize_asr_language(current_value)
+    if current_value in values:
+        return labels, values, values.index(current_value), current_value
+    return labels, values, values.index(MANUAL_LANGUAGE_VALUE), current_value
+
+def _target_language_select_state(current_value):
+    labels = [label for label, target in TARGET_LANGUAGE_OPTIONS] + [MANUAL_LANGUAGE_LABEL]
+    values = [target for _, target in TARGET_LANGUAGE_OPTIONS] + [MANUAL_LANGUAGE_VALUE]
+    current_value = str(current_value or "")
+    if current_value in values:
+        return labels, values, values.index(current_value), current_value
+    return labels, values, values.index(MANUAL_LANGUAGE_VALUE), current_value
+
 
 def _subtitle_layout_settings_visibility(layout):
     return layout == "portrait_9_16", layout == "landscape"
@@ -546,20 +567,27 @@ def page_setting():
     with st.expander(t("Subtitles Settings"), expanded=True):
         c1, c2 = st.columns(2)
         with c1:
-            lang_options = [label for label, _, _ in ASR_LANGUAGE_OPTIONS]
-            lang_values = [code for _, code, _ in ASR_LANGUAGE_OPTIONS]
             stored_lang = load_key("whisper.language")
-            current_lang = _normalize_asr_language(stored_lang)
-            if current_lang != stored_lang:
-                update_key("whisper.language", current_lang)
+            lang_options, lang_values, current_lang_index, custom_lang = _source_language_select_state(stored_lang)
             selected_lang = st.selectbox(
                 t("Recog Lang"),
                 options=lang_options,
-                index=lang_values.index(current_lang),
+                index=current_lang_index,
                 key="subtitle_recog_lang",
             )
             selected_code = lang_values[lang_options.index(selected_lang)]
-            if selected_code != current_lang:
+            if selected_code == MANUAL_LANGUAGE_VALUE:
+                manual_code = st.text_input(
+                    t("Recognition Language Code"),
+                    value=custom_lang if custom_lang != MANUAL_LANGUAGE_VALUE else "",
+                    help=t("Use a Whisper language code, such as ja, ko, fr, or auto"),
+                    key="subtitle_recog_lang_manual",
+                ).strip()
+                if manual_code and manual_code != str(stored_lang):
+                    update_key("whisper.language", manual_code)
+                    st.rerun()
+                selected_code = manual_code or str(stored_lang)
+            elif selected_code != stored_lang:
                 update_key("whisper.language", selected_code)
                 st.rerun()
 
@@ -609,20 +637,27 @@ def page_setting():
                 st.rerun()
 
         with c2:
-            target_options = [label for label, _ in TARGET_LANGUAGE_OPTIONS]
-            target_values = [target for _, target in TARGET_LANGUAGE_OPTIONS]
             current_target = load_key("target_language")
-            if current_target not in target_values:
-                current_target = target_values[0]
+            target_options, target_values, current_target_index, custom_target = _target_language_select_state(current_target)
             selected_target = st.selectbox(
                 t("Target Lang"),
                 options=target_options,
-                index=target_values.index(current_target),
+                index=current_target_index,
                 help=t("Input any language in natural language, as long as llm can understand"),
                 key="subtitle_target_lang",
             )
             selected_target_val = target_values[target_options.index(selected_target)]
-            if selected_target_val != current_target:
+            if selected_target_val == MANUAL_LANGUAGE_VALUE:
+                manual_target = st.text_input(
+                    t("Target Language Name"),
+                    value=custom_target if custom_target != MANUAL_LANGUAGE_VALUE else "",
+                    help=t("Input any language in natural language, as long as llm can understand"),
+                    key="subtitle_target_lang_manual",
+                ).strip()
+                if manual_target and manual_target != str(current_target):
+                    update_key("target_language", manual_target)
+                    st.rerun()
+            elif selected_target_val != current_target:
                 update_key("target_language", selected_target_val)
                 st.rerun()
 

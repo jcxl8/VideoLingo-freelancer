@@ -353,5 +353,8 @@
   "Auto (smart)": "Auto (smart)",
   "Always Above Hard Subtitle": "Always Above Hard Subtitle",
   "Always Below Hard Subtitle": "Always Below Hard Subtitle",
-  "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "Auto: smart placement based on hard-sub position — places translation above when hard-sub is near the bottom"
+  "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "Auto: smart placement based on hard-sub position — places translation above when hard-sub is near the bottom",
+  "Recognition Language Code": "Recognition Language Code",
+  "Use a Whisper language code, such as ja, ko, fr, or auto": "Use a Whisper language code, such as ja, ko, fr, or auto",
+  "Target Language Name": "Target Language Name"
 }
