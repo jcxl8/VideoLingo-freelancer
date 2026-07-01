@@ -24,6 +24,7 @@ ASR_LANGUAGE_OPTIONS = [
 TARGET_LANGUAGE_OPTIONS = [
     ("🇺🇸 English", "English"),
     ("🇨🇳 简体中文", "简体中文"),
+    ("🇪🇸 Español", "西班牙语"),
     ("🇯🇵 日本語", "日语"),
     ("🇰🇷 한국어", "韩语"),
     ("🇩🇪 Deutsch", "德语"),

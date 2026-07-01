@@ -31,6 +31,7 @@ class InstallationContractTest(unittest.TestCase):
         for model in (
             "en_core_web_md",
             "zh_core_web_md",
+            "es_core_news_md",
             "de_core_news_md",
             "ru_core_news_md",
             "pt_core_news_md",
