@@ -133,3 +133,4 @@ language_split_with_space:
 language_split_without_space:
 - zh
 - ja
+- ko

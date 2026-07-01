@@ -361,5 +361,8 @@
   "Auto (smart)": "自动（智能）",
   "Always Above Hard Subtitle": "始终位于硬字幕上方",
   "Always Below Hard Subtitle": "始终位于硬字幕下方",
-  "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "自动：根据硬字幕位置智能选择 — 当硬字幕靠近视频底部时，译文自动放在其上方"
+  "\"auto\": smart placement based on hard-sub position — places translation above when hard-sub is near the bottom": "自动：根据硬字幕位置智能选择 — 当硬字幕靠近视频底部时，译文自动放在其上方",
+  "Recognition Language Code": "识别语言代码",
+  "Use a Whisper language code, such as ja, ko, fr, or auto": "请输入 Whisper 语言代码，例如 ja、ko、fr 或 auto",
+  "Target Language Name": "目标语言名称"
 }
