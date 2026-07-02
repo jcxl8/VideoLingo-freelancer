@@ -10,11 +10,47 @@ from core._6_gen_sub import (
     _repair_leading_sentence_continuations,
     _merge_short_adjacent_subtitles,
     _repair_adjacent_source_phrase_splits,
+    _split_leading_program_title_question,
     _split_long_display_subtitles,
 )
 
 
 class LongSubtitleTimelineSplitTest(unittest.TestCase):
+    def test_leading_60_minutes_rewind_title_splits_from_question(self):
+        df_words = pd.DataFrame(
+            [
+                ("60", 0.32, 0.92),
+                ("Minutes", 0.92, 1.30),
+                ("Rewind", 1.30, 2.32),
+                ("Are", 3.72, 4.02),
+                ("you", 4.02, 4.22),
+                ("on", 4.22, 4.42),
+                ("Facebook", 4.42, 4.84),
+                ("yet?", 4.84, 5.22),
+            ],
+            columns=["text", "start", "end"],
+        )
+        df = pd.DataFrame([
+            {
+                "Source": "60 Minutes Rewind Are you on Facebook yet?",
+                "Translation": "60 Minutes Rewind 你上 Facebook 了吗？",
+                "start_word_idx": 0,
+                "end_word_idx": 7,
+                "start_word": "60",
+                "end_word": "yet?",
+                "speech_timestamp": (0.32, 5.22),
+                "display_timestamp": (0.319, 5.40),
+                "speech_duration": 4.90,
+                "duration": 5.08,
+            }
+        ])
+
+        result = _split_leading_program_title_question(df, df_words)
+
+        self.assertEqual(result["Source"].tolist(), ["60 Minutes Rewind", "Are you on Facebook yet?"])
+        self.assertEqual(result["Translation"].tolist(), ["60 Minutes Rewind", "你上 Facebook 了吗？"])
+        self.assertEqual(result["display_timestamp"].tolist(), [(0.319, 2.32), (3.72, 5.40)])
+
     def test_trans_src_export_preserves_canonical_source_text(self):
         df_words = pd.DataFrame(
             [

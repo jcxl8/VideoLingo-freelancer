@@ -1765,6 +1765,93 @@ def _repair_adjacent_source_phrase_splits(df_trans_time):
         console.print(f"[blue]ℹ️ Repaired {repaired_count} adjacent source phrase split(s) before SRT export.[/blue]")
     return df_trans_time
 
+LEADING_PROGRAM_TITLE_QUESTION_RE = re.compile(
+    r"^(60\s+Minutes\s+Rewind)\s+(.+\?)$",
+    re.I,
+)
+
+
+def _split_leading_program_title_question(df_trans_time, df_words=None):
+    if df_trans_time.empty or df_words is None or df_words.empty:
+        return df_trans_time
+    if "Source" not in df_trans_time.columns or "Translation" not in df_trans_time.columns:
+        return df_trans_time
+
+    rows = [row.to_dict() for _, row in df_trans_time.iterrows()]
+    if not rows:
+        return df_trans_time
+
+    first = rows[0]
+    source_match = LEADING_PROGRAM_TITLE_QUESTION_RE.match(str(first.get("Source", "")).strip())
+    if not source_match:
+        return df_trans_time
+
+    title_source = source_match.group(1).strip()
+    question_source = source_match.group(2).strip()
+    translation = str(first.get("Translation", "")).strip()
+    translation_match = re.match(r"^(60\s+Minutes\s+Rewind)\s+(.+)$", translation, re.I)
+    if not translation_match:
+        return df_trans_time
+
+    start_idx = int(first.get("start_word_idx", 0))
+    end_idx = int(first.get("end_word_idx", start_idx))
+    if start_idx + 3 > len(df_words) or end_idx >= len(df_words):
+        return df_trans_time
+
+    title_words = [
+        _clean_word_token(df_words.iloc[start_idx + offset]["text"])
+        for offset in range(3)
+    ]
+    if title_words != ["60", "minutes", "rewind"]:
+        return df_trans_time
+
+    question_start_idx = start_idx + 3
+    original_display = first.get("display_timestamp", first.get("speech_timestamp", (None, None)))
+    original_display_start = original_display[0] if original_display else None
+    original_display_end = original_display[1] if original_display else None
+
+    title_start = float(original_display_start if original_display_start is not None else df_words.iloc[start_idx]["start"])
+    title_end = float(df_words.iloc[start_idx + 2]["end"])
+    question_start = float(df_words.iloc[question_start_idx]["start"])
+    if question_start - title_end < 0.3:
+        return df_trans_time
+
+    question_speech_end = float(df_words.iloc[end_idx]["end"])
+    question_display_end = float(original_display_end if original_display_end is not None else question_speech_end)
+
+    title_row = dict(first)
+    title_row.update({
+        "Source": title_source,
+        "Translation": translation_match.group(1).strip(),
+        "start_word_idx": start_idx,
+        "end_word_idx": start_idx + 2,
+        "start_word": str(df_words.iloc[start_idx]["text"]).strip('"'),
+        "end_word": str(df_words.iloc[start_idx + 2]["text"]).strip('"'),
+        "speech_timestamp": (title_start, title_end),
+        "display_timestamp": (title_start, title_end),
+        "speech_duration": title_end - title_start,
+        "duration": title_end - title_start,
+        "merged_subtitle_count": 1,
+    })
+
+    question_row = dict(first)
+    question_row.update({
+        "Source": question_source,
+        "Translation": translation_match.group(2).strip(),
+        "start_word_idx": question_start_idx,
+        "end_word_idx": end_idx,
+        "start_word": str(df_words.iloc[question_start_idx]["text"]).strip('"'),
+        "end_word": str(df_words.iloc[end_idx]["text"]).strip('"'),
+        "speech_timestamp": (question_start, question_speech_end),
+        "display_timestamp": (question_start, question_display_end),
+        "speech_duration": question_speech_end - question_start,
+        "duration": question_display_end - question_start,
+        "merged_subtitle_count": 1,
+    })
+
+    console.print("[blue]ℹ️ Split leading 60 Minutes Rewind title from following question.[/blue]")
+    return pd.DataFrame([title_row, question_row] + rows[1:]).reset_index(drop=True)
+
 def _get_video_dimensions(video_file):
     capture = cv2.VideoCapture(video_file)
     try:
@@ -1811,6 +1898,7 @@ def align_timestamp(
         df_trans_time = _repair_leading_sentence_continuations(df_trans_time, df_text)
         df_trans_time = _split_long_display_subtitles(df_trans_time, target_width, target_height, df_text)
     if for_display:
+        df_trans_time = _split_leading_program_title_question(df_trans_time, df_text)
         df_trans_time = _repair_adjacent_source_phrase_splits(df_trans_time)
 
     # Convert start and end timestamps to SRT format
