@@ -10,12 +10,78 @@ from core._6_gen_sub import (
     _repair_leading_sentence_continuations,
     _merge_short_adjacent_subtitles,
     _repair_adjacent_source_phrase_splits,
+    _should_split_long_display_subtitle,
     _split_leading_program_title_question,
     _split_long_display_subtitles,
 )
 
 
 class LongSubtitleTimelineSplitTest(unittest.TestCase):
+    def test_landscape_long_semantic_subtitle_splits_even_with_comfortable_cps(self):
+        parts = _should_split_long_display_subtitle(
+            "好友用主页分享近况、交换照片， 联手推动政治议题，或只玩远程拼字游戏",
+            (21.40, 31.45),
+            1920,
+            1080,
+        )
+
+        self.assertEqual(parts, ["好友用主页分享近况", "交换照片", "联手推动政治议题", "或只玩远程拼字游戏"])
+
+    def test_and_among_them_clause_splits_on_word_anchor(self):
+        words = [
+            ("Zuckerberg", 415.09, 415.73),
+            ("says", 415.73, 415.97),
+            ("there", 415.97, 416.31),
+            ("seem", 416.31, 416.51),
+            ("to", 416.51, 416.69),
+            ("be", 416.69, 416.85),
+            ("more", 416.85, 417.17),
+            ("Republicans", 417.17, 417.73),
+            ("on", 417.73, 418.13),
+            ("the", 418.13, 418.25),
+            ("site", 418.25, 418.53),
+            ("than", 418.53, 418.77),
+            ("Democrats.", 418.77, 419.25),
+            ("and", 419.25, 419.93),
+            ("among", 419.93, 420.29),
+            ("them,", 420.29, 420.65),
+            ("Barack", 420.77, 421.25),
+            ("Obama,", 421.25, 421.87),
+            ("with", 421.97, 422.23),
+            ("his", 422.23, 422.39),
+            ("young", 422.39, 422.63),
+            ("person's", 422.63, 423.19),
+            ("following,", 423.19, 423.55),
+            ("is", 423.71, 424.09),
+            ("hugely", 424.09, 424.61),
+            ("popular.", 424.61, 425.09),
+        ]
+        df_words = pd.DataFrame(words, columns=["text", "start", "end"])
+        df = pd.DataFrame([{
+            "Source": "Zuckerberg says there seem to be more Republicans on the site than Democrats and among them, Barack Obama with his young person's following, is hugely popular.",
+            "Translation": "扎克伯格说，网站上的共和党人似乎比民主党人多 其中，巴拉克·奥巴马靠年轻人的追捧，人气极高",
+            "start_word_idx": 0,
+            "end_word_idx": 25,
+            "start_word": "Zuckerberg",
+            "end_word": "popular.",
+            "speech_timestamp": (415.09, 425.09),
+            "display_timestamp": (415.09, 425.34),
+            "speech_duration": 10.0,
+            "duration": 10.25,
+        }])
+
+        result = _split_long_display_subtitles(df, 1920, 1080, df_words)
+
+        self.assertEqual(result["Source"].tolist(), [
+            "Zuckerberg says there seem to be more Republicans on the site than Democrats",
+            "and among them, Barack Obama with his young person's following, is hugely popular.",
+        ])
+        self.assertEqual(result["Translation"].tolist(), [
+            "扎克伯格说，网站上的共和党人似乎比民主党人多",
+            "其中，巴拉克·奥巴马靠年轻人的追捧，人气极高",
+        ])
+        self.assertEqual(result["display_timestamp"].tolist(), [(415.09, 419.25), (419.25, 425.34)])
+
     def test_leading_60_minutes_rewind_title_splits_from_question(self):
         df_words = pd.DataFrame(
             [

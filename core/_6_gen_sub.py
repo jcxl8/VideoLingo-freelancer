@@ -123,10 +123,10 @@ SHORT_ANSWER_SOURCE_RE = re.compile(
 def convert_to_srt_format(start_time, end_time):
     """Convert time (in seconds) to the format: hours:minutes:seconds,milliseconds"""
     def seconds_to_hmsm(seconds):
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        seconds = seconds % 60
-        milliseconds = int(seconds * 1000) % 1000
+        total_milliseconds = int(round(float(seconds) * 1000))
+        hours, remainder = divmod(total_milliseconds, 3600 * 1000)
+        minutes, remainder = divmod(remainder, 60 * 1000)
+        seconds, milliseconds = divmod(remainder, 1000)
         return f"{hours:02d}:{minutes:02d}:{int(seconds):02d},{milliseconds:03d}"
 
     start_srt = seconds_to_hmsm(start_time)
@@ -1078,6 +1078,15 @@ def _split_source_by_punctuation(source_text):
     pieces = []
     last = 0
     for match in re.finditer(r"[.,;:。；：!?！？]+", text):
+        punct = match.group(0)
+        if "..." in punct or "…" in punct:
+            continue
+        leading_text = text[last:match.start()].strip()
+        if punct in {",", "，"} and re.fullmatch(
+            r"(?i)(well|yeah|yes|no|right|okay|ok|so|but|and|i mean|you know)",
+            leading_text.strip(" ,"),
+        ):
+            continue
         end = match.end()
         piece = text[last:end].strip()
         if piece:
@@ -1131,12 +1140,33 @@ def _source_clause_parts_for_display(source_text):
         return []
 
     match = re.match(r"^(.+?,)\s+(and\b.+?)\s+(because\b.+)$", text, re.I)
-    if not match:
-        return []
-    parts = [match.group(1).strip(), match.group(2).strip(), match.group(3).strip()]
-    if any(_latin_word_count(part) < 3 for part in parts):
-        return []
-    return parts
+    if match:
+        parts = [match.group(1).strip(), match.group(2).strip(), match.group(3).strip()]
+        if any(_latin_word_count(part) < 3 for part in parts):
+            return []
+        return parts
+
+    semantic_patterns = [
+        r"^(.+?)\s+(and\s+among\s+them\b.+)$",
+        r"^(.+?)\s+(and\s+now\b.+)$",
+        r"^(.+?)\s+(and\s+automatically\b.+)$",
+        r"^(.+?)\s+(and\s+over\s+the\s+summer\b.+)$",
+        r"^(.+?)\s+(then\s+in\s+\d{4}\b.+)$",
+        r"^(.+?)\s+(because\b.+)$",
+        r"^(.+?)\s+(since\b.+)$",
+        r"^(.+?)\s+(that\s+monitors\b.+)$",
+    ]
+    for pattern in semantic_patterns:
+        match = re.match(pattern, text, re.I)
+        if not match:
+            continue
+        parts = [match.group(1).strip(" ,"), match.group(2).strip()]
+        if re.fullmatch(r"(?i)(well|yeah|yes|no|right|okay|ok|so|but|and|i\s+mean|you\s+know|well,\s+i\s+think)", parts[0]):
+            continue
+        if all(_latin_word_count(part) >= 3 for part in parts):
+            return parts
+
+    return []
 
 def _split_source_by_sentence_punctuation(source_text):
     text = re.sub(r"\s+", " ", str(source_text or "").strip())
@@ -1146,6 +1176,8 @@ def _split_source_by_sentence_punctuation(source_text):
     pieces = []
     last = 0
     for match in re.finditer(r"[.!?！？]+|,\s+(?=(?:how|what|why|where|when|who)\b)", text, re.I):
+        if "..." in match.group(0) or "…" in match.group(0):
+            continue
         if match.group(0).lstrip().startswith(","):
             leading_text = text[last:match.start()].strip()
             if _latin_word_count(leading_text) > 5:
@@ -1279,6 +1311,9 @@ def _translation_parts_matching_source(translation, part_count, source_parts=Non
             parts[2],
             " ".join(parts[3:]).strip(),
         ]
+    semantic_space_parts = _split_on_cjk_semantic_spaces(translation)
+    if len(semantic_space_parts) == part_count:
+        return semantic_space_parts
     if len(parts) > part_count:
         parts = _merge_source_parts_to_count(parts, part_count)
     return parts if len(parts) == part_count else []
@@ -1512,15 +1547,29 @@ def _should_split_long_display_subtitle(translation, display_timestamp, target_w
         if not semantic_parts:
             return []
 
-        # 如果阅读速度足够舒适，不拆分——避免把自然的中文逗号句切成碎片
+        # Split long burn-in subtitles by semantic clauses even when CPS is
+        # acceptable. A 9-13s subtitle with multiple clauses is visually heavy
+        # on landscape video, even if the average reading speed looks fine.
         total_cjk_chars = _visible_char_count(translation)
         cps = total_cjk_chars / duration if duration > 0 else 999
         is_portrait = _is_portrait_video(target_width, target_height)
         explicit_semantic_space = _has_explicit_cjk_semantic_space(translation)
-        if cps <= SUBTITLE_MAX_TRANSLATION_CPS and (
+        long_semantic_subtitle = (
+            duration >= 6.0
+            and total_cjk_chars >= 18
+            and (
+                explicit_semantic_space
+                or len(semantic_parts) >= 3
+                or len(semantic_parts) == 2
+            )
+        )
+        if cps <= SUBTITLE_MAX_TRANSLATION_CPS and not long_semantic_subtitle and (
             not is_portrait or not explicit_semantic_space
         ):
             return []
+
+        if long_semantic_subtitle and len(semantic_parts) >= 2:
+            return semantic_parts
 
         if len(semantic_parts) >= 3 or (
             len(semantic_parts) == 2 and semantic_parts[0] in CJK_DISCOURSE_MARKERS
@@ -1548,6 +1597,26 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
             target_height,
         )
         source_parts = []
+        source_sentence_parts = _source_sentence_parts_for_timeline(row.get("Source", ""))
+        if source_sentence_parts:
+            matched_trans_parts = _translation_parts_matching_source(
+                row.get("Translation", ""),
+                len(source_sentence_parts),
+                source_sentence_parts,
+            )
+            if matched_trans_parts:
+                source_parts = source_sentence_parts
+                trans_parts = matched_trans_parts
+        source_clause_parts = _source_clause_parts_for_display(row.get("Source", ""))
+        if source_clause_parts:
+            matched_trans_parts = _translation_parts_matching_source(
+                row.get("Translation", ""),
+                len(source_clause_parts),
+                source_clause_parts,
+            )
+            if matched_trans_parts:
+                source_parts = source_clause_parts
+                trans_parts = matched_trans_parts
         duration = float(display_timestamp[1]) - float(display_timestamp[0])
         allow_source_split = _is_portrait_video(
             target_width, target_height
@@ -1584,7 +1653,13 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
             continue
 
         if not source_parts:
-            source_parts = _source_parts_by_word_count(row.get("Source", ""), len(trans_parts))
+            source_parts = _source_parts_by_semantics(row.get("Source", ""), len(trans_parts))
+        if not source_parts:
+            if allow_source_split:
+                source_parts = _source_parts_by_word_count(row.get("Source", ""), len(trans_parts))
+            else:
+                rows.append(row.to_dict())
+                continue
         weights = [
             max(_text_weight(source_parts[index]), _text_weight(trans_parts[index]))
             for index in range(len(trans_parts))
@@ -1603,6 +1678,18 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
                 if isinstance(speech_timestamp, tuple) and len(speech_timestamp) == 2
                 else display_spans
             )
+
+        if len(trans_parts) >= 4 and not _has_repeated_parallel_markers(row.get("Source", "")):
+            unreadable_split = False
+            for trans_part, span in zip(trans_parts, display_spans):
+                span_duration = max(float(span[1]) - float(span[0]), 0.001)
+                visible_chars = _visible_char_count(trans_part)
+                if span_duration < 1.5 and visible_chars / span_duration > SUBTITLE_MAX_TRANSLATION_CPS:
+                    unreadable_split = True
+                    break
+            if unreadable_split:
+                rows.append(row.to_dict())
+                continue
 
         for part_index, trans_part in enumerate(trans_parts):
             new_row = row.to_dict()
