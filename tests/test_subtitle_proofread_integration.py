@@ -14,6 +14,7 @@ class SubtitleProofreadIntegrationTest(unittest.TestCase):
         function = source[source.index("def align_timestamp_main"):]
         proofread_position = function.index("proofread_subtitle_set(")
         self.assertIn("subtitle_paths", function[proofread_position:proofread_position + 120])
+        self.assertIn("auto_fix=True", function[proofread_position:proofread_position + 220])
         ambiguity_position = function.index("write_ambiguity_report(df_trans_time)")
         audio_position = function.index("# for audio")
         self.assertLess(proofread_position, ambiguity_position)

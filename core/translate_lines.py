@@ -239,6 +239,19 @@ def _has_leading_you_know_question(source):
 def _target_has_you_know_marker(text):
     return bool(re.search(r"(?:你懂|你知道|知道吧|对吧|是吧)", str(text)))
 
+def _source_has_repetition_count(source):
+    return bool(
+        re.search(
+            r"\b(?:like\s+)?(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+"
+            r"(?:i['’]?ms|times?|tries|takes?|diet\s+cokes?)\b",
+            str(source),
+            re.I,
+        )
+    )
+
+def _target_has_count_marker(text):
+    return bool(re.search(r"(?:\d+|一|二|两|三|四|五|六|七|八|九|十|几|多).{0,4}(?:次|遍|条|个|档|回|杯|瓶|左右|大概)|(?:十|10)", str(text)))
+
 ACKNOWLEDGEMENT_WORDS = {
     "yes", "yeah", "yep", "yup", "ok", "okay", "all", "right", "cool",
     "sure", "fine", "no", "worries", "thanks", "thank", "you",
@@ -254,6 +267,8 @@ def _translation_omission_reason(source, translation):
     target_text = str(translation).strip()
     target_units = len(re.findall(r"[\u3400-\u9fff]", target_text))
     target_units += len(re.findall(r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)?", target_text))
+    if _source_has_repetition_count(source) and not _target_has_count_marker(target_text):
+        return "source count expression appears omitted"
     if _has_embedded_dialogue_question(source) and not _target_has_question_marker(target_text):
         embedded_minimum = max(6, int(len(source_words) * 0.55 + 0.999))
         if target_units < embedded_minimum:

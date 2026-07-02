@@ -15,6 +15,9 @@ _TIMESTAMP = re.compile(
 _SHORT_LOWERCASE_FRAGMENT = re.compile(r"^[a-z][A-Za-z'’-]*(?:\s+[a-z][A-Za-z'’-]*){0,4}[.!?,…]*$")
 _SUSPICIOUS_INLINE_ELLIPSIS = re.compile(r"\b[A-Za-z]+\.\.\.\s+[a-z]")
 _SHORT_FILLER_SOURCE = re.compile(r"^(?:you know\?|yeah\.?|right,?|okay\.?|ok\.?|all right\.?)$", re.I)
+_SHORT_SELF_INTRO_SOURCE = re.compile(r"^i['’]?m\s+[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+){0,3}\.?$", re.I)
+_COUNT_TAIL_TRANSLATION = re.compile(r"(?:\d+|一|二|两|三|四|五|六|七|八|九|十|几|多).{0,4}(?:次|遍|条|个|档|回|左右|大概)|(?:十|10)")
+_CHINESE_SELF_INTRO_TAIL = re.compile(r"((?:我是|我叫|这里是).+)$")
 
 
 def _target_has_question_marker(text):
@@ -60,6 +63,87 @@ def _normalise(text):
     return re.sub(r"\s+", " ", str(text)).strip()
 
 
+def _format_seconds(seconds):
+    milliseconds = int(round(float(seconds) * 1000))
+    hours, remainder = divmod(milliseconds, 3600 * 1000)
+    minutes, remainder = divmod(remainder, 60 * 1000)
+    secs, milliseconds = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+
+
+def _write_srt(path, entries, line_builder):
+    blocks = []
+    for entry in entries:
+        lines = line_builder(entry)
+        text = "\n".join(line for line in lines if line is not None)
+        blocks.append(f"{entry['index']}\n{_format_seconds(entry['start'])} --> {_format_seconds(entry['end'])}\n{text}")
+    atomic_write_text(path, "\n\n".join(blocks) + "\n")
+
+
+def _write_subtitle_set(paths, source_entries, translation_entries):
+    _write_srt(paths["src"], source_entries, lambda entry: entry["lines"])
+    _write_srt(paths["trans"], translation_entries, lambda entry: entry["lines"])
+    _write_srt(paths["src_trans"], source_entries, lambda entry: [
+        source_entries[entry["index"] - 1]["text"],
+        translation_entries[entry["index"] - 1]["text"],
+    ])
+    _write_srt(paths["trans_src"], source_entries, lambda entry: [
+        translation_entries[entry["index"] - 1]["text"],
+        source_entries[entry["index"] - 1]["text"],
+    ])
+
+
+def _set_entry_text(entry, text):
+    entry["lines"] = [text]
+    entry["text"] = text
+
+
+def _append_entry_text(entry, text):
+    text = _normalise(text)
+    if not text:
+        return
+    current = _normalise(entry["text"])
+    if text in current:
+        return
+    _set_entry_text(entry, _normalise(f"{current} {text}"))
+
+
+def _auto_fix_translation_alignment(source_entries, translation_entries):
+    fixes = []
+    limit = min(len(source_entries), len(translation_entries))
+    for position in range(limit):
+        source_text = _normalise(source_entries[position]["text"])
+        translation_text = _normalise(translation_entries[position]["text"])
+        if (
+            source_text.lower() == "you know?"
+            and len(translation_text) > 8
+            and not _target_has_question_marker(translation_text)
+            and position + 1 < limit
+        ):
+            _append_entry_text(translation_entries[position + 1], translation_text)
+            _set_entry_text(translation_entries[position], "你懂吧？")
+            fixes.append({
+                "entry_index": translation_entries[position]["index"],
+                "type": "auto_fixed_short_question_shift",
+                "reason": "Moved non-question translation from a standalone 'You know?' subtitle to the following entry.",
+            })
+            continue
+        if _SHORT_SELF_INTRO_SOURCE.fullmatch(source_text) and _COUNT_TAIL_TRANSLATION.search(translation_text):
+            match = _CHINESE_SELF_INTRO_TAIL.search(translation_text)
+            if match and position > 0:
+                shifted_text = translation_text[:match.start()].strip(" ，,。")
+                self_intro_text = match.group(1).strip()
+                if shifted_text and self_intro_text:
+                    _append_entry_text(translation_entries[position - 1], shifted_text)
+                    _set_entry_text(translation_entries[position], self_intro_text)
+                    fixes.append({
+                        "entry_index": translation_entries[position]["index"],
+                        "type": "auto_fixed_self_intro_tail_shift",
+                        "reason": "Moved count phrase from a short self-introduction subtitle back to the preceding entry.",
+                    })
+    return fixes
+
+
 def _issue(issue_type, reason, *, severity="warning", entry=None, source="", translation=""):
     return {
         "severity": severity,
@@ -99,7 +183,7 @@ def _render_markdown(report):
     return "\n".join(lines)
 
 
-def proofread_subtitle_set(paths, report_json=None, report_md=None):
+def proofread_subtitle_set(paths, report_json=None, report_md=None, auto_fix=False):
     """Audit final SRT variants without modifying them."""
     required = ("src", "trans", "src_trans", "trans_src")
     parsed = {}
@@ -118,6 +202,13 @@ def proofread_subtitle_set(paths, report_json=None, report_md=None):
             "Subtitle variants have different entry counts: " + ", ".join(f"{key}={value}" for key, value in counts.items()),
             severity="error",
         ))
+    fixes = []
+    if auto_fix and not issues and parsed["src"] and parsed["trans"]:
+        fixes = _auto_fix_translation_alignment(parsed["src"], parsed["trans"])
+        if fixes:
+            _write_subtitle_set(paths, parsed["src"], parsed["trans"])
+            parsed = {key: _parse_srt(paths[key]) for key in required}
+            counts = {key: len(entries) for key, entries in parsed.items()}
 
     for key, entries in parsed.items():
         previous = None
@@ -153,6 +244,8 @@ def proofread_subtitle_set(paths, report_json=None, report_md=None):
             issues.append(_issue("translation_omission", "Translation may omit part of the source subtitle.", severity="error", entry=translation, source=source_text, translation=translation_text))
         if _SHORT_FILLER_SOURCE.fullmatch(source_text) and len(translation_text) > 8:
             issues.append(_issue("semantic_alignment_suspicion", "Very short filler/question source is paired with a long translation; adjacent subtitle text may be shifted.", severity="error", entry=translation, source=source_text, translation=translation_text))
+        if _SHORT_SELF_INTRO_SOURCE.fullmatch(source_text) and _COUNT_TAIL_TRANSLATION.search(translation_text):
+            issues.append(_issue("semantic_alignment_suspicion", "Short self-introduction source is paired with a count phrase; preceding subtitle text may be shifted into this entry.", severity="error", entry=translation, source=source_text, translation=translation_text))
         if "?" in source_text and not _target_has_question_marker(translation_text):
             issues.append(_issue("question_translation_mismatch", "Source is a question but the translation has no question marker.", entry=translation, source=source_text, translation=translation_text))
 
@@ -183,8 +276,10 @@ def proofread_subtitle_set(paths, report_json=None, report_md=None):
             "issue_count": len(issues),
             "error_count": error_count,
             "warning_count": len(issues) - error_count,
+            "fix_count": len(fixes),
         },
         "files": {key: str(paths.get(key, "")) for key in required},
+        "fixes": fixes,
         "issues": issues,
     }
     if report_json:

@@ -89,6 +89,13 @@ class SubtitleProofreadTest(unittest.TestCase):
                     "I'm Bob Simon. It didn't go perfectly though.",
                     "不过录得不太顺利",
                 ),
+                (
+                    3,
+                    "00:00:03,000",
+                    "00:00:04,000",
+                    "I'm Anderson Cooper.",
+                    "都得录上十次左右 我是安德森·库珀",
+                ),
             ]
             _write_srt(paths["src"], [(idx, start, end, source) for idx, start, end, source, _ in entries])
             _write_srt(paths["trans"], [(idx, start, end, translation) for idx, start, end, _, translation in entries])
@@ -107,6 +114,61 @@ class SubtitleProofreadTest(unittest.TestCase):
             self.assertIn("semantic_alignment_suspicion", issue_types)
             self.assertIn("question_translation_mismatch", issue_types)
             self.assertIn("translation_omission", issue_types)
+
+    def test_auto_fixes_deterministic_shifted_translation_tails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {key: root / f"{key}.srt" for key in ("src", "trans", "src_trans", "trans_src")}
+            entries = [
+                (
+                    1,
+                    "00:00:00,000",
+                    "00:00:03,000",
+                    "like ten I'ms for each one that actually gets on the air.",
+                    "每条真正播出的 I'm 介绍",
+                ),
+                (
+                    2,
+                    "00:00:03,000",
+                    "00:00:04,000",
+                    "I'm Anderson Cooper.",
+                    "都得录上十次左右 我是安德森·库珀",
+                ),
+                (
+                    3,
+                    "00:00:04,000",
+                    "00:00:05,000",
+                    "You know?",
+                    "第一次为《60 分钟》录音",
+                ),
+                (
+                    4,
+                    "00:00:05,000",
+                    "00:00:08,000",
+                    "It is a little the first time you do it for 60 minutes.",
+                    "感觉就是 天啊",
+                ),
+            ]
+            _write_srt(paths["src"], [(idx, start, end, source) for idx, start, end, source, _ in entries])
+            _write_srt(paths["trans"], [(idx, start, end, translation) for idx, start, end, _, translation in entries])
+            _write_srt(paths["src_trans"], [
+                (idx, start, end, [source, translation])
+                for idx, start, end, source, translation in entries
+            ])
+            _write_srt(paths["trans_src"], [
+                (idx, start, end, [translation, source])
+                for idx, start, end, source, translation in entries
+            ])
+
+            report = proofread_subtitle_set(paths, auto_fix=True)
+
+            self.assertEqual(report["summary"]["fix_count"], 2)
+            trans_text = paths["trans"].read_text(encoding="utf-8")
+            self.assertIn("每条真正播出的 I'm 介绍 都得录上十次左右", trans_text)
+            self.assertIn("我是安德森·库珀", trans_text)
+            self.assertIn("你懂吧？", trans_text)
+            self.assertIn("感觉就是 天啊 第一次为《60 分钟》录音", trans_text)
+            self.assertIn("You know?\n你懂吧？", paths["src_trans"].read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

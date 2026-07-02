@@ -2162,6 +2162,7 @@ def align_timestamp_main():
             subtitle_paths,
             report_json=SUBTITLE_PROOFREAD_REPORT_JSON,
             report_md=SUBTITLE_PROOFREAD_REPORT_MD,
+            auto_fix=True,
         )
     else:
         clear_subtitle_proofread_report()

@@ -108,6 +108,22 @@ class TranslationCompletenessTest(unittest.TestCase):
             )
         )
 
+    def test_flags_omitted_repetition_count(self):
+        self.assertTrue(
+            translation_may_omit_content(
+                "like ten I'ms for each one that actually gets on the air.",
+                "每条真正播出的 I'm 介绍",
+            )
+        )
+
+    def test_accepts_translated_repetition_count(self):
+        self.assertFalse(
+            translation_may_omit_content(
+                "like ten I'ms for each one that actually gets on the air.",
+                "每条真正播出的 I'm 介绍大概要录十次",
+            )
+        )
+
     def test_flags_leading_you_know_question_omission(self):
         self.assertTrue(
             translation_may_omit_content(
