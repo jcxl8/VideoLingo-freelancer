@@ -98,6 +98,17 @@ def resolve_local_whisper_model(model_name):
     )
     return model_name
 
+def _has_complete_hf_snapshot(repo_id):
+    cache_dir = _repo_cache_dir(repo_id)
+    snapshots_dir = os.path.join(cache_dir, "snapshots")
+    if not os.path.isdir(snapshots_dir):
+        return False
+    for name in os.listdir(snapshots_dir):
+        snapshot_dir = os.path.join(snapshots_dir, name)
+        if os.path.isdir(snapshot_dir) and _required_model_files_exist(snapshot_dir):
+            return True
+    return False
+
 def _iter_timed_words(result):
     for segment in result.get("segments", []):
         for word in segment.get("words", []):
@@ -359,22 +370,33 @@ def transcribe_audio_segments(raw_audio_file, vocal_audio_file, segments):
         model_name = load_key("whisper.model")
         local_model = os.path.join(MODEL_DIR, model_name)
         
+    download_root = MODEL_DIR
     if os.path.exists(local_model):
         rprint(f"[green]📥 Loading local WHISPER model:[/green] {local_model} ...")
         model_name = local_model
+        download_root = None
     else:
+        original_model_name = model_name
         model_name = resolve_local_whisper_model(model_name)
         if not os.path.exists(model_name):
             rprint(f"[green]📥 Using WHISPER model from HuggingFace:[/green] {model_name} ...")
+            repo_id = WHISPER_MODEL_REPOS.get(original_model_name)
+            if repo_id and not _has_complete_hf_snapshot(repo_id):
+                rprint(
+                    "[yellow]⚠️ Project model cache is incomplete; "
+                    "falling back to the global HuggingFace cache.[/yellow]"
+                )
+                download_root = None
 
     whisper_language = None if 'auto' in WHISPER_LANGUAGE else WHISPER_LANGUAGE
-    model = WhisperModel(
-        model_name,
-        device=device,
-        compute_type=compute_type,
-        download_root=MODEL_DIR,
-        cpu_threads=4,
-    )
+    load_kwargs = {
+        "device": device,
+        "compute_type": compute_type,
+        "cpu_threads": 4,
+    }
+    if download_root:
+        load_kwargs["download_root"] = download_root
+    model = WhisperModel(model_name, **load_kwargs)
 
     def slice_audio_segment(full_audio, start, end):
         # Use whisperx's ffmpeg-based loader instead of librosa.load() which

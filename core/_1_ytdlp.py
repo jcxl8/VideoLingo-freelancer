@@ -317,6 +317,7 @@ def download_video_ytdlp(url, save_path='output', resolution='1080'):
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best' if resolution == 'best' else f'bestvideo[height<={resolution}]+bestaudio/best[height<={resolution}]',
         'outtmpl': os.path.join(download_dir, '%(title).200B.%(ext)s'),
+        'merge_output_format': 'mp4',
         'noplaylist': True,
         'writethumbnail': True,
         'retries': 10,

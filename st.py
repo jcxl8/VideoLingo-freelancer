@@ -1,6 +1,17 @@
+import os, sys, re, shutil, time, json, html, subprocess, base64, hashlib, random
+
+
+def _configure_utf8_console():
+    """Allow Rich and background task logs to print Unicode on Windows."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+_configure_utf8_console()
+
 import streamlit as st
 import streamlit.components.v1 as components
-import os, sys, re, shutil, time, json, html, subprocess, base64, hashlib, random
 from core.st_utils.imports_and_utils import *
 from core.st_utils.task_runner import TaskRunner
 from core.st_utils.subtitle_preview_cache import ensure_preview
