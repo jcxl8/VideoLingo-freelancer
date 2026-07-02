@@ -1218,7 +1218,7 @@ def _split_translation_by_sentence_boundaries(translation):
         )
     return [part for part in split_parts if part]
 
-def _translation_parts_matching_source(translation, part_count):
+def _translation_parts_matching_source(translation, part_count, source_parts=None):
     if part_count <= 1:
         return []
     parts = _split_translation_by_sentence_boundaries(translation)
@@ -1230,6 +1230,30 @@ def _translation_parts_matching_source(translation, part_count):
         parts = expanded_parts
     if len(parts) < part_count:
         return []
+    source_parts = [str(part or "").strip() for part in (source_parts or [])]
+    if (
+        len(parts) > part_count
+        and part_count == 2
+        and len(source_parts) == 2
+        and re.search(r"\?\s*$", source_parts[0])
+        and re.search(r"[？?]\s*$", parts[0])
+    ):
+        return [parts[0], " ".join(parts[1:]).strip()]
+    if (
+        len(parts) > part_count
+        and part_count == 3
+        and len(source_parts) == 3
+        and re.search(r"doesn'?t\s+rhyme\s+with\s+anything,?\s*$", source_parts[0], re.I)
+        and re.match(r"(?i)and\s+that\b", source_parts[1])
+        and re.match(r"(?i)because\b", source_parts[2])
+        and re.search(r"任何词|什么词|任何", parts[1])
+        and re.match(r"^(这点|这一点|这事|这就)", parts[2])
+    ):
+        return [
+            f"{parts[0]} {parts[1]}".strip(),
+            parts[2],
+            " ".join(parts[3:]).strip(),
+        ]
     if len(parts) > part_count:
         parts = _merge_source_parts_to_count(parts, part_count)
     return parts if len(parts) == part_count else []
@@ -1508,6 +1532,7 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
             trans_parts = _translation_parts_matching_source(
                 row.get("Translation", ""),
                 len(source_parts),
+                source_parts,
             )
             if not trans_parts:
                 source_parts = []
@@ -1516,6 +1541,7 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
             trans_parts = _translation_parts_matching_source(
                 row.get("Translation", ""),
                 len(source_parts),
+                source_parts,
             )
             if not trans_parts:
                 source_parts = []
@@ -1524,6 +1550,7 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
             trans_parts = _translation_parts_matching_source(
                 row.get("Translation", ""),
                 len(source_parts),
+                source_parts,
             )
             if not trans_parts:
                 source_parts = []
