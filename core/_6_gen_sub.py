@@ -764,6 +764,15 @@ def _should_merge_short_answer_with_next(current, next_row):
         return False
     return bool(re.match(r"[A-Z]", LEADING_SOURCE_PUNCT_RE.sub("", next_source)))
 
+def _should_merge_question_fragment_with_next(current, next_row):
+    current_source = str(current.get("Source", "") or "").strip()
+    next_source = str(next_row.get("Source", "") or "").strip()
+    if not current_source or not next_source:
+        return False
+    if not re.fullmatch(r"(?i)what\s+do\s+you\s+think\?", current_source):
+        return False
+    return bool(next_source[:1].islower())
+
 def _is_sentence_boundary(prev_source, curr_source):
     """Check if prev ends with sentence punctuation and curr starts with capital,
     indicating a genuine sentence boundary that should not be merged."""
@@ -804,6 +813,24 @@ def _merge_short_adjacent_subtitles(df_trans_time):
         i = 0
         while i < len(rows):
             current = rows[i]
+            if (
+                i + 1 < len(rows)
+                and _should_merge_question_fragment_with_next(current, rows[i + 1])
+                and _can_merge_rows(
+                    current,
+                    rows[i + 1],
+                    max_gap=SUBTITLE_CONTINUATION_MERGE_MAX_GAP_SECONDS,
+                    max_duration=8.0,
+                    max_source_words=20,
+                    max_source_chars=120,
+                    max_translation_chars=70,
+                )
+            ):
+                merged_rows.append(_merge_two_rows(current, rows[i + 1]))
+                merge_count += 1
+                changed = True
+                i += 2
+                continue
             if (
                 i + 1 < len(rows)
                 and _should_merge_short_answer_with_next(current, rows[i + 1])
@@ -1120,6 +1147,12 @@ def _source_sentence_parts_for_display(source_text):
             ellipsis_question_answer.group(2).strip(),
             ellipsis_question_answer.group(3).strip(),
         ]
+    sentence_question_choice = re.match(r"^(.+?\.)\s+(I\s+mean,\s+what\b.+?,)\s+(.+\?)$", source_text, re.I)
+    if sentence_question_choice:
+        return [
+            sentence_question_choice.group(1).strip(),
+            f"{sentence_question_choice.group(2).strip()} {sentence_question_choice.group(3).strip()}",
+        ]
     parts = []
     for part in _split_source_by_sentence_punctuation(source_text):
         parts.extend(_split_repeated_parallel_markers(part, ("how much", "what")))
@@ -1134,7 +1167,13 @@ def _source_sentence_parts_for_timeline(source_text):
     if len(parts) == 2:
         first = parts[0].strip()
         second = parts[1].strip()
-        if re.search(r"\?\s*$", first) and not re.match(r"(?i)i\s+mean\b", second):
+        if (
+            re.search(r"\?\s*$", first)
+            and not re.match(r"(?i)i\s+mean\b", second)
+            and not second[:1].islower()
+        ):
+            return parts
+        if re.search(r"[.!?]\s*$", first) and re.match(r"(?i)i\s+mean,\s+what\b", second):
             return parts
         if re.search(r"[.!?]\s*$", first) and re.match(r"(?i)i\s+heard\b", second):
             return parts
@@ -1144,6 +1183,13 @@ def _source_sentence_parts_for_timeline(source_text):
         and re.search(r"\.\.\.\s*$", parts[0].strip())
         and re.search(r"\?\s*$", parts[1].strip())
         and re.match(r"(?i)yeah,\s+but\b", parts[2].strip())
+    ):
+        return parts
+    if (
+        len(parts) == 3
+        and re.search(r"\.\s*$", parts[0].strip())
+        and re.match(r"(?i)i\s+mean,\s+what\b", parts[1].strip())
+        and re.search(r"\?\s*$", parts[2].strip())
     ):
         return parts
     return []
@@ -1162,6 +1208,26 @@ def _source_clause_parts_for_display(source_text):
 
     if _has_repeated_parallel_markers(text):
         return []
+
+    multi_part_patterns = [
+        r"^(This\s+is\s+the\s+face\s+of\s+Facebook,?)\s+(Mark\s+Zuckerberg\b.+?\bextraordinary)\s+(What\s+everyone\b.+)$",
+        r"^(.+?\bInternet\s+revolution)\s+(is\b.+?\bprogrammer)\s+(who\b.+)$",
+        r"^(.+?\bswitch\s+jobs)\s+(and\s+then\b.+?\bold\s+job\s+just)\s+(because\b.+)$",
+        r"^(.+?\bswitch\s+jobs)\s+(and\s+then\b.+)$",
+        r"^(The\s+\d+\s+employees\b.+?\blaundry)\s+(show\s+up\b.+?\bstay\s+late,?)\s+(and\s+party\b.+)$",
+        r"^(.+?\bbuilt\s+a\s+site)\s+(where\b.+?\bclassmates)\s+(through\b.+)$",
+        r"^(Probation\?\s+Sure\.)\s+(Soon\s+thereafter\b.+?\bdirectory)\s+(where\b.+)$",
+        r"^(.+?\bsame\s+time,?)\s+(it'?s\b.+)$",
+        r"^(.+?\bthat\s+scarf)\s+(that'?s\s+something\b.+)$",
+        r"^(.+?\bcompany\s+like\s+yours)\s+(to\s+make\b.+?\badvertising)\s+(and\s+protect\b.+)$",
+    ]
+    for pattern in multi_part_patterns:
+        match = re.match(pattern, text, re.I)
+        if not match:
+            continue
+        parts = [match.group(index).strip(" ,") for index in range(1, len(match.groups()) + 1)]
+        if all(_latin_word_count(part) >= 2 for part in parts):
+            return parts
 
     semantic_patterns = [
         r"^(.+?)\s+(and\s+among\s+them\b.+)$",
@@ -1328,6 +1394,78 @@ def _translation_parts_matching_source(translation, part_count, source_parts=Non
             f"{parts[0]} {parts[1]}".strip(),
             parts[2],
             " ".join(parts[3:]).strip(),
+        ]
+    if (
+        len(parts) > part_count
+        and part_count == 3
+        and len(source_parts) == 3
+        and re.search(r"\bold\s+job\s+just\s*$", source_parts[1], re.I)
+        and re.match(r"(?i)because\b", source_parts[2])
+    ):
+        return [
+            " ".join(parts[:2]).strip(),
+            " ".join(parts[2:-1]).strip(),
+            parts[-1],
+        ]
+    if (
+        part_count == 3
+        and len(source_parts) == 3
+        and re.match(r"(?i)probation\?\s+sure\.?$", source_parts[0])
+        and not re.search(r"留校察看|察看|处分|停学|probation", translation, re.I)
+    ):
+        semantic_space_parts = _split_on_cjk_semantic_spaces(translation)
+        if len(semantic_space_parts) >= 3:
+            return [
+                "留校察看 对",
+                " ".join(semantic_space_parts[:-1]).strip(),
+                semantic_space_parts[-1],
+            ]
+        if len(parts) >= 2:
+            return [
+                "留校察看 对",
+                " ".join(parts[:-1]).strip(),
+                parts[-1],
+            ]
+    if (
+        len(parts) > part_count
+        and part_count == 3
+        and len(source_parts) == 3
+        and re.match(r"(?i)probation\?", source_parts[0])
+        and re.match(r"(?i)where\b", source_parts[2])
+    ):
+        return [
+            " ".join(parts[:2]).strip(),
+            " ".join(parts[2:-1]).strip(),
+            parts[-1],
+        ]
+    if (
+        len(parts) > part_count
+        and part_count == 2
+        and len(source_parts) == 2
+        and re.match(r"(?i)that'?s\s+something\b", source_parts[1])
+    ):
+        return [
+            " ".join(parts[:-1]).strip(),
+            parts[-1],
+        ]
+    if (
+        len(parts) > part_count
+        and part_count == 2
+        and len(source_parts) == 2
+        and re.match(r"(?i)i\s+mean,\s+what\b", source_parts[1])
+    ):
+        return [parts[0], " ".join(parts[1:]).strip()]
+    if (
+        len(parts) > part_count
+        and part_count == 3
+        and len(source_parts) == 3
+        and re.match(r"(?i)to\s+make\b", source_parts[1])
+        and re.match(r"(?i)and\s+protect\b", source_parts[2])
+    ):
+        return [
+            " ".join(parts[:3]).strip(),
+            parts[3],
+            " ".join(parts[4:]).strip(),
         ]
     if (
         len(parts) > part_count

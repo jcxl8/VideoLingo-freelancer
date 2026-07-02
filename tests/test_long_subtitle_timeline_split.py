@@ -11,12 +11,97 @@ from core._6_gen_sub import (
     _merge_short_adjacent_subtitles,
     _repair_adjacent_source_phrase_splits,
     _should_split_long_display_subtitle,
+    _source_clause_parts_for_display,
+    _source_sentence_parts_for_timeline,
     _split_leading_program_title_question,
     _split_long_display_subtitles,
+    _translation_parts_matching_source,
 )
 
 
 class LongSubtitleTimelineSplitTest(unittest.TestCase):
+    def test_mark_zuckerberg_remaining_long_clauses_have_semantic_parts(self):
+        cases = [
+            (
+                "Sitting atop this growing company directing an Internet revolution is a young geeky computer programmer who created the site only four years ago.",
+                "坐镇这家飞速发展的公司，引领互联网革命的，是一位年轻 的极客程序员，仅四年前创建了这个网站",
+                [
+                    "坐镇这家飞速发展的公司 引领互联网革命的",
+                    "是一位年轻 的极客程序员",
+                    "仅四年前创建了这个网站",
+                ],
+            ),
+            (
+                "This is the face of Facebook, Mark Zuckerberg the mogul who's guiding its extraordinary What everyone wants to know is",
+                "这就是 Facebook 的招牌 大亨马克·扎克伯格 而大家都想知道的是",
+                [
+                    "这就是 Facebook 的招牌",
+                    "大亨马克·扎克伯格",
+                    "而大家都想知道的是",
+                ],
+            ),
+            (
+                "The 400 employees who get free food and laundry show up late, stay late, and party really late.",
+                "享受免费餐饮和洗衣服务的 400 名员工 上班迟到 下班晚走 派对还开到深夜",
+                [
+                    "享受免费餐饮和洗衣服务的 400 名员工",
+                    "上班迟到 下班晚走",
+                    "派对还开到深夜",
+                ],
+            ),
+            (
+                "It used to be the case like you'd switch jobs and then maybe you wouldn't keep in touch with all the people that you knew from that old job just because it was too hard.",
+                "以前啊 换了工作 你可能就不会再…… 和旧工作的所有熟人保持联系 只是 因为这太难了",
+                [
+                    "以前啊 换了工作",
+                    "你可能就不会再…… 和旧工作的所有熟人保持联系 只是",
+                    "因为这太难了",
+                ],
+            ),
+            (
+                "In his second year at Harvard he built a site where students could rate or berate the looks of classmates through ID photos he lifted off Harvard's computers.",
+                "他在哈佛大二时建了个网站，让学生评价 或吐槽同学的外貌，用的是从哈佛电脑里偷来的证件照",
+                [
+                    "他在哈佛大二时建了个网站",
+                    "让学生评价 或吐槽同学的外貌",
+                    "用的是从哈佛电脑里偷来的证件照",
+                ],
+            ),
+            (
+                "Probation? Sure. Soon thereafter, he and his two roommates created an online version of the Harvard student directory where kids could message each other.",
+                "此后不久，他和两名室友创建了一个在线版 的哈佛学生名录，同学们可以互相发消息",
+                [
+                    "留校察看 对",
+                    "此后不久 他和两名室友创建了一个在线版 的哈佛学生名录",
+                    "同学们可以互相发消息",
+                ],
+            ),
+            (
+                "I actually think that this makes it less commercial. I mean, what would you rather see, a banner ad from Bloomingdale's or that one of your friends bought a scarf?",
+                "其实我觉得这反而让它没那么商业化了 比如说，你更愿意看到什么——是布鲁明戴尔的横幅广告， 还是你朋友买了条围巾？",
+                [
+                    "其实我觉得这反而让它没那么商业化了",
+                    "比如说 你更愿意看到什么——是布鲁明戴尔的横幅广告 还是你朋友买了条围巾？",
+                ],
+            ),
+            (
+                "Well, I guess this shows how difficult it is for a company like yours to make money through advertising and protect people's real privacy and their sense of privacy.",
+                "嗯，我想这恰好说明了，像你们这样的公司 想靠广告赚钱，又要保护用户的真实隐私和隐私感，有多难",
+                [
+                    "嗯 我想这恰好说明了 像你们这样的公司",
+                    "想靠广告赚钱",
+                    "又要保护用户的真实隐私和隐私感 有多难",
+                ],
+            ),
+        ]
+
+        for source, translation, expected_translation_parts in cases:
+            source_parts = _source_sentence_parts_for_timeline(source) or _source_clause_parts_for_display(source)
+            self.assertEqual(
+                _translation_parts_matching_source(translation, len(source_parts), source_parts),
+                expected_translation_parts,
+            )
+
     def test_landscape_long_semantic_subtitle_splits_even_with_comfortable_cps(self):
         parts = _should_split_long_display_subtitle(
             "好友用主页分享近况、交换照片， 联手推动政治议题，或只玩远程拼字游戏",
@@ -26,6 +111,53 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
         )
 
         self.assertEqual(parts, ["好友用主页分享近况", "交换照片", "联手推动政治议题", "或只玩远程拼字游戏"])
+
+    def test_question_fragment_merges_with_lowercase_continuation(self):
+        df = pd.DataFrame([
+            {
+                "Source": "What do you think?",
+                "Translation": "你觉得 23 岁当上 CEO",
+                "speech_timestamp": (204.45, 205.65),
+                "display_timestamp": (204.45, 205.65),
+                "start_word_idx": 0,
+                "end_word_idx": 3,
+                "start_word": "What",
+                "end_word": "think?",
+                "merged_subtitle_count": 1,
+            },
+            {
+                "Source": "it's done to him as a person to be 23 years old?",
+                "Translation": "对他这个人有什么影响？",
+                "speech_timestamp": (205.65, 209.79),
+                "display_timestamp": (205.65, 209.79),
+                "start_word_idx": 4,
+                "end_word_idx": 15,
+                "start_word": "it's",
+                "end_word": "old?",
+                "merged_subtitle_count": 1,
+            },
+        ])
+
+        merged = _merge_short_adjacent_subtitles(df)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(
+            merged.iloc[0]["Source"],
+            "What do you think it's done to him as a person to be 23 years old?",
+        )
+        self.assertEqual(
+            merged.iloc[0]["Translation"],
+            "你觉得 23 岁当上 CEO 对他这个人有什么影响？",
+        )
+        self.assertEqual(merged.iloc[0]["speech_timestamp"], (204.45, 209.79))
+
+    def test_lowercase_question_continuation_is_not_timeline_split(self):
+        self.assertEqual(
+            _source_sentence_parts_for_timeline(
+                "What do you think? it's done to him as a person to be 23 years old?"
+            ),
+            [],
+        )
 
     def test_and_among_them_clause_splits_on_word_anchor(self):
         words = [
