@@ -50,6 +50,7 @@ POLLUTION_MARKERS = [
     "视频背景", "字幕：", "词汇表", "术语", "含义：", "文本：", "文本:",
     "Video context", "Subtitle:", "Glossary", "glossary", "Text:",
     "Return only", "Do not translate", "source term",
+    "normalize similar ASR", "将类似的ASR", "统一为该确切",
 ]
 FILLER_PATTERN = re.compile(r"\b(?:um+|uh+|er+|erm|hmm+|mm+)\b[,，、.。!！?？;；:\s]*", re.I)
 
@@ -213,7 +214,39 @@ def _has_leading_affirmative_answer(source):
 
 
 def _target_has_affirmative_marker(text):
-    return bool(re.search(r"(?:是的|对|对的|没错|确实|当然|嗯|我(?:去|做|有|是|确实)|去了|做了|确实如此)", str(text)))
+    return bool(re.search(r"(?:是的|对|对的|没错|确实|当然|嗯|好|行|可以|没事|我(?:去|做|有|是|确实)|去了|做了|确实如此)", str(text)))
+
+SELF_INTRO_SOURCE_PATTERN = re.compile(
+    r"\b[Ii]['’]?m\s+[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+){0,3}(?=\s*(?:[,.!?]|$))"
+)
+
+
+def _has_leading_self_intro_name(source):
+    return bool(re.match(r"^\s*" + SELF_INTRO_SOURCE_PATTERN.pattern, str(source)))
+
+def _source_self_intro_count(source):
+    return len(SELF_INTRO_SOURCE_PATTERN.findall(str(source)))
+
+def _target_self_intro_count(text):
+    return len(re.findall(r"(?:我是|我叫|这里是|也是|也叫)", str(text)))
+
+def _target_has_self_intro_marker(text):
+    return bool(re.search(r"(?:我是|我叫|这里是|我是\s*[A-Za-z])", str(text)))
+
+def _has_leading_you_know_question(source):
+    return bool(re.match(r"^\s*you\s+know\s*\?\s+\S", str(source), re.I))
+
+def _target_has_you_know_marker(text):
+    return bool(re.search(r"(?:你懂|你知道|知道吧|对吧|是吧)", str(text)))
+
+ACKNOWLEDGEMENT_WORDS = {
+    "yes", "yeah", "yep", "yup", "ok", "okay", "all", "right", "cool",
+    "sure", "fine", "no", "worries", "thanks", "thank", "you",
+}
+
+def _is_short_acknowledgement_sequence(source):
+    words = [word.lower() for word in re.findall(r"[A-Za-z]+", str(source))]
+    return bool(words) and len(words) <= 5 and all(word in ACKNOWLEDGEMENT_WORDS for word in words)
 
 
 def translation_may_omit_content(source, translation):
@@ -233,7 +266,26 @@ def translation_may_omit_content(source, translation):
         and not _target_has_affirmative_marker(target_text)
     ):
         return True
+    if (
+        len(source_clauses) >= 2
+        and _has_leading_self_intro_name(source)
+        and not _target_has_self_intro_marker(target_text)
+    ):
+        return True
+    source_self_intro_count = _source_self_intro_count(source)
+    if source_self_intro_count >= 2 and _target_self_intro_count(target_text) < source_self_intro_count:
+        return True
+    if (
+        len(source_clauses) >= 2
+        and _has_leading_you_know_question(source)
+        and not _target_has_you_know_marker(target_text)
+    ):
+        return True
+    if len(source_clauses) >= 2 and _is_short_acknowledgement_sequence(source):
+        return False
     if len(source_clauses) >= 2:
+        if len(source_words) <= 5:
+            return target_units < len(source_clauses) * 2
         short_dialogue_minimum = max(5, int(len(source_words) * 0.60 + 0.999))
         if target_units < short_dialogue_minimum:
             return True
@@ -251,10 +303,14 @@ def _retry_incomplete_translation(source, translation, target_language, glossary
         f"{source[:80]}[/yellow]"
     )
     terms = _format_line_terms(source, glossary_terms)
+    terms_block = (
+        f"Glossary context (do not translate this block):\n{terms}\n\n"
+        if terms else ""
+    )
     prompt = (
         f"Translate the complete subtitle into {target_language}. Preserve every clause and all meaning. "
         f"Do not summarize or omit content. Output only the translation.\n"
-        f"{terms + chr(10) if terms else ''}{source}"
+        f"{terms_block}Subtitle:\n{source}"
     )
     for _ in range(2):
         candidate = ask_gpt(prompt, resp_type=None, log_title="translate_completeness_retry", api_role="translator")

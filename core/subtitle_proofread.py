@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+from core.translate_lines import translation_may_omit_content
 from core.utils.atomic_files import atomic_write_json, atomic_write_text
 
 
@@ -13,6 +14,11 @@ _TIMESTAMP = re.compile(
 )
 _SHORT_LOWERCASE_FRAGMENT = re.compile(r"^[a-z][A-Za-z'’-]*(?:\s+[a-z][A-Za-z'’-]*){0,4}[.!?,…]*$")
 _SUSPICIOUS_INLINE_ELLIPSIS = re.compile(r"\b[A-Za-z]+\.\.\.\s+[a-z]")
+_SHORT_FILLER_SOURCE = re.compile(r"^(?:you know\?|yeah\.?|right,?|okay\.?|ok\.?|all right\.?)$", re.I)
+
+
+def _target_has_question_marker(text):
+    return bool(re.search(r"[？?吗呢]|什么|怎么|为什么|如何|谁|哪|是否|懂|知道|对吧|是吧", str(text)))
 
 
 def _seconds(parts):
@@ -143,6 +149,12 @@ def proofread_subtitle_set(paths, report_json=None, report_md=None):
         visible_characters = len(re.sub(r"\s+", "", translation_text))
         if visible_characters / duration > 13:
             issues.append(_issue("translation_cps", "Translation reading speed exceeds 13 visible characters per second.", entry=translation, source=source_text, translation=translation_text))
+        if translation_may_omit_content(source_text, translation_text):
+            issues.append(_issue("translation_omission", "Translation may omit part of the source subtitle.", severity="error", entry=translation, source=source_text, translation=translation_text))
+        if _SHORT_FILLER_SOURCE.fullmatch(source_text) and len(translation_text) > 8:
+            issues.append(_issue("semantic_alignment_suspicion", "Very short filler/question source is paired with a long translation; adjacent subtitle text may be shifted.", severity="error", entry=translation, source=source_text, translation=translation_text))
+        if "?" in source_text and not _target_has_question_marker(translation_text):
+            issues.append(_issue("question_translation_mismatch", "Source is a question but the translation has no question marker.", entry=translation, source=source_text, translation=translation_text))
 
     expectations = {
         "src_trans": lambda source, translation: [source, translation],

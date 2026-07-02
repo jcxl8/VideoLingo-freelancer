@@ -70,6 +70,44 @@ class SubtitleProofreadTest(unittest.TestCase):
             self.assertEqual(report["issues"], [])
             self.assertEqual(report["summary"]["entry_count"], 1)
 
+    def test_reports_semantic_translation_alignment_issues(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {key: root / f"{key}.srt" for key in ("src", "trans", "src_trans", "trans_src")}
+            entries = [
+                (
+                    1,
+                    "00:00:00,000",
+                    "00:00:01,000",
+                    "You know?",
+                    "第一次录《60 分钟》时",
+                ),
+                (
+                    2,
+                    "00:00:01,000",
+                    "00:00:03,000",
+                    "I'm Bob Simon. It didn't go perfectly though.",
+                    "不过录得不太顺利",
+                ),
+            ]
+            _write_srt(paths["src"], [(idx, start, end, source) for idx, start, end, source, _ in entries])
+            _write_srt(paths["trans"], [(idx, start, end, translation) for idx, start, end, _, translation in entries])
+            _write_srt(paths["src_trans"], [
+                (idx, start, end, [source, translation])
+                for idx, start, end, source, translation in entries
+            ])
+            _write_srt(paths["trans_src"], [
+                (idx, start, end, [translation, source])
+                for idx, start, end, source, translation in entries
+            ])
+
+            report = proofread_subtitle_set(paths)
+
+            issue_types = {item["type"] for item in report["issues"]}
+            self.assertIn("semantic_alignment_suspicion", issue_types)
+            self.assertIn("question_translation_mismatch", issue_types)
+            self.assertIn("translation_omission", issue_types)
+
 
 if __name__ == "__main__":
     unittest.main()
