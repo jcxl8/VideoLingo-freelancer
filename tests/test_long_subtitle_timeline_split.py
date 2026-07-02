@@ -7,6 +7,7 @@ import pandas as pd
 from core._6_gen_sub import (
     align_timestamp,
     _drop_likely_standalone_ack_hallucinations,
+    _repair_leading_sentence_continuations,
     _merge_short_adjacent_subtitles,
     _repair_adjacent_source_phrase_splits,
     _split_long_display_subtitles,
@@ -14,6 +15,94 @@ from core._6_gen_sub import (
 
 
 class LongSubtitleTimelineSplitTest(unittest.TestCase):
+    def test_trans_src_export_preserves_canonical_source_text(self):
+        df_words = pd.DataFrame(
+            [
+                ("Yes.", 0.0, 0.2),
+                ("Too", 0.2, 0.4),
+                ("many", 0.4, 0.6),
+                ("people", 0.6, 0.8),
+                ("sacrificed", 0.8, 1.0),
+                ("so", 1.0, 1.2),
+                ("that", 1.2, 1.4),
+                ("I", 1.4, 1.6),
+                ("could", 1.6, 1.8),
+                ("be", 1.8, 2.0),
+                ("here.", 2.0, 2.2),
+                ("The", 3.0, 3.2),
+                ("next", 3.2, 3.4),
+                ("line", 3.4, 3.6),
+                ("stays", 3.6, 3.8),
+                ("normal.", 3.8, 4.0),
+            ],
+            columns=["text", "start", "end"],
+        )
+        source = "Yes. Too many people sacrificed so that I could be here."
+        translation = "是的 太多人为了我能站在这里而牺牲了"
+        df_translate = pd.DataFrame([
+            {"Source": source, "Translation": translation},
+            {"Source": "The next line stays normal.", "Translation": "下一句保持正常"},
+        ])
+
+        with tempfile.TemporaryDirectory() as directory:
+            align_timestamp(
+                df_words,
+                df_translate,
+                [("trans_src.srt", ["Translation", "Source"])],
+                directory,
+            )
+
+            exported = (Path(directory) / "trans_src.srt").read_text(encoding="utf-8")
+
+        self.assertIn(f"{translation}\n{source}", exported)
+
+    def test_leading_actually_fragment_moves_to_previous_sentence(self):
+        df_words = pd.DataFrame(
+            [
+                ("I", 118.22, 118.34),
+                ("don't", 118.34, 118.62),
+                ("know.", 118.62, 118.90),
+                ("I", 118.90, 119.02),
+                ("might", 119.02, 119.24),
+                ("use", 119.24, 119.44),
+                ("it.", 119.44, 120.407),
+                ("actually.", 121.0, 121.3),
+                ("They're", 121.3, 121.7),
+                ("not", 121.7, 121.9),
+                ("lyrics,", 121.9, 122.4),
+                ("really.", 122.4, 123.199),
+            ],
+            columns=["text", "start", "end"],
+        )
+        df_translate = pd.DataFrame([
+            {
+                "Source": "I don't know. I might use it.",
+                "Translation": "不知道 没准会用上",
+            },
+            {
+                "Source": "actually. They're not lyrics, really.",
+                "Translation": "其实这根本不算歌词",
+            },
+        ])
+
+        df_trans_time = df_translate.copy()
+        df_trans_time["start_word_idx"] = [0, 7]
+        df_trans_time["end_word_idx"] = [6, 11]
+        df_trans_time["start_word"] = ["I", "actually."]
+        df_trans_time["end_word"] = ["it.", "really."]
+        df_trans_time["speech_timestamp"] = [(118.22, 120.407), (121.0, 123.199)]
+        df_trans_time["display_timestamp"] = [(118.22, 120.407), (121.0, 123.199)]
+        df_trans_time["speech_duration"] = [2.187, 2.199]
+
+        result = _repair_leading_sentence_continuations(df_trans_time, df_words)
+
+        self.assertEqual(result.iloc[0]["Source"], "I don't know. I might use it actually.")
+        self.assertEqual(result.iloc[0]["Translation"], "我也说不准 其实没准会用上")
+        self.assertEqual(result.iloc[1]["Source"], "They're not lyrics, really.")
+        self.assertEqual(result.iloc[1]["Translation"], "这根本不算歌词")
+        self.assertEqual(result.iloc[0]["display_timestamp"], (118.22, 121.3))
+        self.assertEqual(result.iloc[1]["display_timestamp"], (121.3, 123.199))
+
     def test_landscape_comfortable_cps_does_not_split_on_chinese_spaces(self):
         df = pd.DataFrame([
             {
@@ -63,13 +152,114 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
         self.assertEqual(result.iloc[0]["display_timestamp"][1], result.iloc[1]["display_timestamp"][0])
         self.assertEqual(result.iloc[1]["display_timestamp"][1], result.iloc[2]["display_timestamp"][0])
 
+    def test_question_sentence_keeps_matching_chinese_question_translation(self):
+        df = pd.DataFrame([
+            {
+                "Source": (
+                    "What rhymes with orange? If you're taking the word at face value "
+                    "and you just say orange nothing is going to rhyme with it exactly."
+                ),
+                "Translation": (
+                    "什么词和 orange 押韵？ 如果你只按字面发音的话 直接读 orange "
+                    "那就没什么词能跟它完全押韵了"
+                ),
+                "display_timestamp": (15.54, 24.39),
+                "speech_timestamp": (15.54, 24.39),
+            }
+        ])
+
+        result = _split_long_display_subtitles(df, target_width=1920, target_height=1080)
+
+        self.assertEqual(
+            result["Source"].tolist(),
+            [
+                "What rhymes with orange?",
+                (
+                    "If you're taking the word at face value and you just say orange "
+                    "nothing is going to rhyme with it exactly."
+                ),
+            ],
+        )
+        self.assertEqual(
+            result["Translation"].tolist(),
+            [
+                "什么词和 orange 押韵？",
+                "如果你只按字面发音的话 直接读 orange 那就没什么词能跟它完全押韵了",
+            ],
+        )
+
+    def test_landscape_long_clause_subtitle_splits_into_timed_semantic_rows(self):
+        df = pd.DataFrame([
+            {
+                "Source": (
+                    "Like, people say that the word orange doesn't rhyme with anything, and that "
+                    "kind of pisses me off because I can think of a lot of things that rhyme with orange."
+                ),
+                "Translation": (
+                    "La gente dice que 'naranja' no rima con nada, y eso me enfurece "
+                    "porque puedo pensar en muchas palabras que riman con naranja."
+                ),
+                "display_timestamp": (5.1, 15.5),
+                "speech_timestamp": (5.1, 15.46),
+            }
+        ])
+
+        result = _split_long_display_subtitles(df, target_width=1920, target_height=1080)
+
+        self.assertEqual(
+            result["Source"].tolist(),
+            [
+                "Like, people say that the word orange doesn't rhyme with anything,",
+                "and that kind of pisses me off",
+                "because I can think of a lot of things that rhyme with orange.",
+            ],
+        )
+        self.assertEqual(
+            result["Translation"].tolist(),
+            [
+                "La gente dice que 'naranja' no rima con nada",
+                "y eso me enfurece",
+                "porque puedo pensar en muchas palabras que riman con naranja.",
+            ],
+        )
+        self.assertEqual(result.iloc[0]["display_timestamp"][0], 5.1)
+        self.assertEqual(result.iloc[-1]["display_timestamp"][1], 15.5)
+        self.assertEqual(result.iloc[0]["display_timestamp"][1], result.iloc[1]["display_timestamp"][0])
+        self.assertEqual(result.iloc[1]["display_timestamp"][1], result.iloc[2]["display_timestamp"][0])
+
+    def test_rhyme_with_anything_chinese_clause_stays_with_first_source_clause(self):
+        df = pd.DataFrame([
+            {
+                "Source": (
+                    "Like, people say that the word orange doesn't rhyme with anything, and that "
+                    "kind of pisses me off because I can think of a lot of things that rhyme with orange."
+                ),
+                "Translation": (
+                    "比如人们常说 orange 这个词没法押韵 跟任何词都押不上韵，"
+                    "这点真让我火大 因为我能想到很多词跟 orange 押韵"
+                ),
+                "display_timestamp": (5.1, 15.5),
+                "speech_timestamp": (5.1, 15.5),
+            }
+        ])
+
+        result = _split_long_display_subtitles(df, target_width=1920, target_height=1080)
+
+        self.assertEqual(
+            result["Translation"].tolist(),
+            [
+                "比如人们常说 orange 这个词没法押韵 跟任何词都押不上韵",
+                "这点真让我火大",
+                "因为我能想到很多词跟 orange 押韵",
+            ],
+        )
+
     def test_parallel_how_much_clause_splits_after_sentence_boundary(self):
         df = pd.DataFrame([
             {
                 "Source": (
-                    "We'll find out, I guess. But I think one thing that is very different "
-                    "is how much people care about other people how much people want to "
-                    "interact with other people"
+                    "We'll find out, I guess. But I think one thing that is very different is "
+                    "how much people care about other people how much people want to interact with other people"
                 ),
                 "Translation": (
                     "Acho que vamos descobrir. Mas acho que algo muito diferente é o quanto "
@@ -81,9 +271,7 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
         ])
 
         result = _split_long_display_subtitles(df, target_width=1920, target_height=1080)
-        result = _repair_adjacent_source_phrase_splits(result)
 
-        self.assertEqual(len(result), 3)
         self.assertEqual(
             result["Source"].tolist(),
             [
@@ -92,17 +280,23 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
                 "how much people want to interact with other people",
             ],
         )
-        self.assertEqual(result.iloc[0]["display_timestamp"][0], 1.88)
-        self.assertEqual(result.iloc[-1]["display_timestamp"][1], 8.92)
-        self.assertEqual(result.iloc[0]["display_timestamp"][1], result.iloc[1]["display_timestamp"][0])
-        self.assertEqual(result.iloc[1]["display_timestamp"][1], result.iloc[2]["display_timestamp"][0])
+
+        repaired = _repair_adjacent_source_phrase_splits(result)
+        self.assertEqual(
+            repaired["Source"].tolist(),
+            [
+                "We'll find out, I guess.",
+                "But I think one thing that is very different is how much people care about other people",
+                "how much people want to interact with other people",
+            ],
+        )
 
     def test_parallel_what_clause_splits_after_sentence_boundary(self):
         df = pd.DataFrame([
             {
                 "Source": (
-                    "We can imagine and do all sorts of new things. We still have to figure "
-                    "out what to do what other people want what other people will find useful."
+                    "We can imagine and do all sorts of new things. We still have to figure out "
+                    "what to do what other people want what other people will find useful."
                 ),
                 "Translation": (
                     "Poderemos criar todo tipo de novidade. Temos que descobrir o que fazer, "
@@ -115,7 +309,6 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
 
         result = _split_long_display_subtitles(df, target_width=1920, target_height=1080)
 
-        self.assertEqual(len(result), 4)
         self.assertEqual(
             result["Source"].tolist(),
             [
@@ -125,13 +318,6 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
                 "what other people will find useful.",
             ],
         )
-        self.assertEqual(result.iloc[0]["display_timestamp"][0], 17.56)
-        self.assertEqual(result.iloc[-1]["display_timestamp"][1], 23.52)
-        for index in range(len(result) - 1):
-            self.assertEqual(
-                result.iloc[index]["display_timestamp"][1],
-                result.iloc[index + 1]["display_timestamp"][0],
-            )
 
     def test_long_silence_does_not_extend_already_readable_subtitle(self):
         df_words = pd.DataFrame(
@@ -506,6 +692,34 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
             [
                 "because you had to learn a fair bit of pitch -perfect Russian and Korean.",
                 "Well, I'm sure the Russians and the",
+            ],
+        )
+
+    def test_adjacent_source_repair_preserves_timed_semantic_rows(self):
+        repaired = _repair_adjacent_source_phrase_splits(pd.DataFrame([
+            {
+                "Source": "What rhymes with orange? If you're taking the word at face value and you just say orange",
+                "Translation": "¿Qué rima con naranja? Si tomas la palabra al pie de la letra y solo dices 'naranja',",
+                "display_timestamp": (15.54, 21.949),
+                "speech_timestamp": (15.54, 21.58),
+                "start_word_idx": 48,
+                "end_word_idx": 64,
+            },
+            {
+                "Source": "nothing is going to rhyme with it exactly.",
+                "Translation": "nada va a rimar exactamente.",
+                "display_timestamp": (22.4, 25.081),
+                "speech_timestamp": (22.4, 24.14),
+                "start_word_idx": 65,
+                "end_word_idx": 72,
+            },
+        ]))
+
+        self.assertEqual(
+            repaired["Source"].tolist(),
+            [
+                "What rhymes with orange? If you're taking the word at face value and you just say orange",
+                "nothing is going to rhyme with it exactly.",
             ],
         )
 

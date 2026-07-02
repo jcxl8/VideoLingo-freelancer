@@ -1160,6 +1160,31 @@ def _split_source_by_sentence_punctuation(source_text):
         pieces.append(tail)
     return pieces
 
+def _is_leading_continuation_fragment(fragment):
+    text = re.sub(r"\s+", " ", str(fragment or "").strip())
+    if not text:
+        return False
+    if re.fullmatch(r"(?i)(actually|really|though|anyway|too|also|then)[.!?]?", text):
+        return True
+    return text[:1].islower()
+
+def _split_translation_leading_actually(translation):
+    text = re.sub(r"\s+", " ", str(translation or "").strip())
+    match = re.match(r"^(其实|实际上)[。.!?？,，、\s]*(.+)$", text)
+    if not match:
+        return None
+    return match.group(1), match.group(2).strip()
+
+def _prepend_chinese_actually_translation(translation, actually_translation):
+    text = re.sub(r"\s+", " ", str(translation or "").strip())
+    marker = str(actually_translation or "").strip()
+    if not text or not marker:
+        return text
+    if re.match(r"^(?:我\s*)?不(?:知道|确定)\b", text):
+        text = re.sub(r"^(?:我\s*)?不(?:知道|确定)[,，、\s]*", "", text).strip()
+        return f"我也说不准 {marker}{text}".strip()
+    return f"{marker}{text}".strip()
+
 def _split_repeated_parallel_markers(text, markers):
     text = re.sub(r"\s+", " ", str(text or "").strip())
     if not text:
@@ -1610,23 +1635,41 @@ def _repair_leading_sentence_continuations(df_trans_time, df_words=None):
         next_row = rows[index + 1]
         current_source = str(current.get("Source", "") or "").strip()
         next_source = str(next_row.get("Source", "") or "").strip()
-        if not current_source or not next_source or re.search(r"[.!?]\s*$", current_source):
+        if not current_source or not next_source:
             index += 1
             continue
 
         next_parts = _split_source_by_sentence_punctuation(next_source)
-        if len(next_parts) < 2 or not next_parts[0][:1].islower():
+        if len(next_parts) < 2 or not _is_leading_continuation_fragment(next_parts[0]):
+            index += 1
+            continue
+        if re.search(r"[.!?]\s*$", current_source) and not re.fullmatch(
+            r"(?i)actually[.!?]?",
+            next_parts[0].strip(),
+        ):
             index += 1
             continue
 
         moved_source = next_parts[0]
         remaining_source = " ".join(next_parts[1:]).strip()
         trans_parts = _split_translation_by_sentence_boundaries(next_row.get("Translation", ""))
+        is_actually_fragment = re.fullmatch(r"(?i)actually[.!?]?", moved_source.strip())
+        if len(trans_parts) < 2 and is_actually_fragment:
+            split_translation = _split_translation_leading_actually(next_row.get("Translation", ""))
+            if split_translation:
+                trans_parts = list(split_translation)
         if len(trans_parts) < 2:
             index += 1
             continue
         moved_translation = trans_parts[0]
         remaining_translation = " ".join(trans_parts[1:]).strip()
+        current_translation = current.get("Translation", "")
+        if is_actually_fragment and re.fullmatch(
+            r"(其实|实际上)[。.!?？]*",
+            moved_translation.strip(),
+        ):
+            current_translation = _prepend_chinese_actually_translation(current_translation, moved_translation)
+            moved_translation = ""
 
         try:
             next_start_idx = int(next_row.get("start_word_idx"))
@@ -1638,7 +1681,7 @@ def _repair_leading_sentence_continuations(df_trans_time, df_words=None):
             next_start_idx = moved_end_idx = remaining_start_idx = next_end_idx = None
 
         current["Source"] = _join_source_text(current_source, moved_source)
-        current["Translation"] = _join_translation_text(current.get("Translation", ""), moved_translation)
+        current["Translation"] = _join_translation_text(current_translation, moved_translation)
         next_row["Source"] = remaining_source
         next_row["Translation"] = remaining_translation
 
