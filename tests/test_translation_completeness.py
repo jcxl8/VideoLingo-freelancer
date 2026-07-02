@@ -1,7 +1,12 @@
 import unittest
 from unittest.mock import patch
 
-from core.translate_lines import _finalize_translations_after_refine, translation_may_omit_content
+from core.translate_lines import (
+    _extract_glossary_terms,
+    _finalize_translations_after_refine,
+    _normalize_proper_name_translations,
+    translation_may_omit_content,
+)
 
 
 class TranslationCompletenessTest(unittest.TestCase):
@@ -75,6 +80,44 @@ class TranslationCompletenessTest(unittest.TestCase):
                 _finalize_translations_after_refine([source], [refined], [raw], "zh-CN", []),
                 [raw],
             )
+
+    def test_keeps_translator_output_when_refine_collapses_to_quote(self):
+        source = "It's like, I'm Anderson Cooper."
+        raw = "就像，我是安德森·库珀。"
+        refined = "’"
+
+        with patch("core.translate_lines.console.print"):
+            self.assertEqual(
+                _finalize_translations_after_refine([source], [refined], [raw], "zh-CN", []),
+                [raw],
+            )
+
+    def test_normalizes_refined_english_name_to_existing_chinese_translation(self):
+        source_lines = [
+            "I'm? Anderson Cooper. I'm Anderson Cooper.",
+            "I'm Bob Simon. I'm Anderson Cooper, you know?",
+        ]
+        raw = [
+            "我是？安德森·库珀。我是安德森·库珀。",
+            "我是鲍勃·西蒙。我是安德森·库珀，你知道的吧？",
+        ]
+        refined = [
+            "我是…… Anderson Cooper？我是 Anderson Cooper",
+            "我是鲍勃·西蒙。我是 Anderson Cooper，对吧？",
+        ]
+
+        self.assertEqual(
+            _normalize_proper_name_translations(source_lines, refined, raw),
+            [
+                "我是……安德森·库珀？我是安德森·库珀",
+                "我是鲍勃·西蒙。我是安德森·库珀，对吧？",
+            ],
+        )
+
+    def test_skips_identity_multi_word_name_glossary_terms(self):
+        prompt = '"Anderson Cooper": "Anderson Cooper"\n"Bob Simon": "鲍勃·西蒙"'
+
+        self.assertEqual(_extract_glossary_terms(prompt), [("Bob Simon", "鲍勃·西蒙")])
 
     def test_flags_repeated_self_intro_omission(self):
         self.assertTrue(

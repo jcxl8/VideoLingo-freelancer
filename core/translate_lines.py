@@ -318,6 +318,11 @@ def _preview_text(text, limit=100):
     text = re.sub(r"\s+", " ", str(text)).strip()
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
+def _translation_degraded_to_punctuation(source, translation):
+    source_words = re.findall(r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)?", str(source))
+    meaningful_target = re.findall(r"[\u3400-\u9fffA-Za-z0-9]", str(translation))
+    return len(source_words) >= 3 and len(meaningful_target) <= 1
+
 
 def _retry_incomplete_translation(source, translation, target_language, glossary_terms):
     reason = _translation_omission_reason(source, translation)
@@ -349,10 +354,16 @@ def _finalize_translations_after_refine(source_lines, refined_translations, raw_
     final_translations = []
     for source, refined, raw in zip(source_lines, refined_translations, raw_translations):
         refined_reason = _translation_omission_reason(source, refined)
-        if refined_reason and raw and not _contains_prompt_pollution(raw) and not translation_may_omit_content(source, raw):
+        degraded_reason = "refinement collapsed to punctuation" if _translation_degraded_to_punctuation(source, refined) else ""
+        if (
+            (refined_reason or degraded_reason)
+            and raw
+            and not _contains_prompt_pollution(raw)
+            and not translation_may_omit_content(source, raw)
+        ):
             console.print(
                 "[yellow]⚠️ Workflow refinement may omit source content; keeping translator output "
-                f"({refined_reason}). Source: {_preview_text(source)} | Refined: {_preview_text(refined)} | "
+                f"({refined_reason or degraded_reason}). Source: {_preview_text(source)} | Refined: {_preview_text(refined)} | "
                 f"Translator: {_preview_text(raw)}[/yellow]"
             )
             final_translations.append(raw)
@@ -407,9 +418,18 @@ def _extract_glossary_terms(things_to_note_prompt):
 
         match = re.search(r'["“]([^"”]+)["”]\s*:\s*["“]?([^",”]+)', line)
         if match:
-            terms.append((match.group(1).strip(), match.group(2).strip()))
+            src = match.group(1).strip()
+            tgt = match.group(2).strip()
+            if _should_skip_identity_name_term(src, tgt):
+                continue
+            terms.append((src, tgt))
 
-    return terms[:8]
+    return terms[:20]
+
+def _should_skip_identity_name_term(src, tgt):
+    if _normalize_token(src) != _normalize_token(tgt):
+        return False
+    return bool(re.match(r"^[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+)+$", str(src).strip()))
 
 def _normalize_token(text):
     return re.sub(r"[^a-z0-9]", "", str(text).lower())
@@ -442,6 +462,45 @@ def _format_line_terms(line, glossary_terms):
         if _line_matches_term(line, src):
             matched_terms.append(f"{src} = {tgt} (normalize similar ASR spellings to this exact proper noun/term)")
     return "\n".join(matched_terms)
+
+PROPER_NAME_SOURCE_RE = re.compile(r"\b[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+)+\b")
+TRANSLATED_NAME_RE = re.compile(r"[\u3400-\u9fff]+(?:·[\u3400-\u9fff]+)+")
+
+def _source_proper_names(source):
+    names = []
+    for match in PROPER_NAME_SOURCE_RE.finditer(str(source)):
+        name = match.group(0).strip()
+        if name.lower() in {"60 minutes"}:
+            continue
+        names.append(name)
+    return names
+
+def _name_translation_map(source_lines, translations):
+    name_map = {}
+    for source, translation in zip(source_lines, translations):
+        source_names = _source_proper_names(source)
+        translated_names = TRANSLATED_NAME_RE.findall(str(translation))
+        if not source_names or not translated_names:
+            continue
+        for source_name, translated_name in zip(source_names, translated_names):
+            if source_name not in str(translation):
+                name_map.setdefault(source_name, translated_name)
+    return name_map
+
+def _apply_name_translation_map(text, name_map):
+    normalized = str(text)
+    for source_name, translated_name in sorted(name_map.items(), key=lambda item: len(item[0]), reverse=True):
+        normalized = re.sub(rf"\b{re.escape(source_name)}\b", translated_name, normalized)
+        normalized = re.sub(rf"(?<=[\u3400-\u9fff……？！。，、；：])\s+{re.escape(translated_name)}", translated_name, normalized)
+    return normalize_cjk_latin_spacing(normalized)
+
+def _normalize_proper_name_translations(source_lines, translations, reference_translations=None):
+    references = list(reference_translations or []) + list(translations)
+    repeated_sources = list(source_lines) * (2 if reference_translations else 1)
+    name_map = _name_translation_map(repeated_sources, references)
+    if not name_map:
+        return translations
+    return [_apply_name_translation_map(translation, name_map) for translation in translations]
 
 def _translate_line_with_translator(line, target_language, line_terms=None):
     # For local translators: split multi-sentence lines to prevent the model
@@ -727,6 +786,7 @@ def _translate_lines_with_translator(lines, things_to_note_prompt=None, summary_
         target_language,
         glossary_terms,
     )
+    final_translations = _normalize_proper_name_translations(source_lines, final_translations, raw_translations)
     translate_result = "\n".join(final_translations)
 
     return translate_result, lines
@@ -832,7 +892,8 @@ def translate_lines(lines, previous_content_prompt, after_cotent_prompt, things_
     reflect_translate = load_key('reflect_translate')
     if not reflect_translate:
         # If reflect_translate is False or not set, use faithful translation directly
-        translate_result = "\n".join([normalize_cjk_latin_spacing(faith_result[i]["direct"].strip()) for i in faith_result])
+        direct_translations = [normalize_cjk_latin_spacing(faith_result[i]["direct"].strip()) for i in faith_result]
+        translate_result = "\n".join(_normalize_proper_name_translations(lines.split('\n'), direct_translations))
         
         table = Table(title="Translation Results", show_header=False, box=box.ROUNDED)
         table.add_column("Translations", style="bold")
@@ -860,7 +921,9 @@ def translate_lines(lines, previous_content_prompt, after_cotent_prompt, things_
 
     console.print(table)
 
-    translate_result = "\n".join([normalize_cjk_latin_spacing(express_result[i]["free"].replace('\n', ' ').strip()) for i in express_result])
+    direct_translations = [normalize_cjk_latin_spacing(faith_result[i]["direct"].strip()) for i in faith_result]
+    free_translations = [normalize_cjk_latin_spacing(express_result[i]["free"].replace('\n', ' ').strip()) for i in express_result]
+    translate_result = "\n".join(_normalize_proper_name_translations(lines.split('\n'), free_translations, direct_translations))
     _collect_ambiguity_items(express_result, lines.split('\n'), translate_result.split('\n'), index)
 
     if len(lines.split('\n')) != len(translate_result.split('\n')):
