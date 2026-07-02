@@ -249,8 +249,7 @@ def _is_short_acknowledgement_sequence(source):
     return bool(words) and len(words) <= 5 and all(word in ACKNOWLEDGEMENT_WORDS for word in words)
 
 
-def translation_may_omit_content(source, translation):
-    """Detect a long source sentence collapsed into an implausibly short translation."""
+def _translation_omission_reason(source, translation):
     source_words = re.findall(r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)?", str(source))
     target_text = str(translation).strip()
     target_units = len(re.findall(r"[\u3400-\u9fff]", target_text))
@@ -258,49 +257,60 @@ def translation_may_omit_content(source, translation):
     if _has_embedded_dialogue_question(source) and not _target_has_question_marker(target_text):
         embedded_minimum = max(6, int(len(source_words) * 0.55 + 0.999))
         if target_units < embedded_minimum:
-            return True
+            return "embedded question appears omitted"
     source_clauses = [part for part in re.split(r"[.!?]+", str(source)) if part.strip()]
     if (
         len(source_clauses) >= 2
         and _has_leading_affirmative_answer(source)
         and not _target_has_affirmative_marker(target_text)
     ):
-        return True
+        return "leading affirmative answer appears omitted"
     if (
         len(source_clauses) >= 2
         and _has_leading_self_intro_name(source)
         and not _target_has_self_intro_marker(target_text)
     ):
-        return True
+        return "leading self introduction appears omitted"
     source_self_intro_count = _source_self_intro_count(source)
     if source_self_intro_count >= 2 and _target_self_intro_count(target_text) < source_self_intro_count:
-        return True
+        return "repeated self introduction appears omitted"
     if (
         len(source_clauses) >= 2
         and _has_leading_you_know_question(source)
         and not _target_has_you_know_marker(target_text)
     ):
-        return True
+        return "leading 'you know?' appears omitted"
     if len(source_clauses) >= 2 and _is_short_acknowledgement_sequence(source):
-        return False
+        return ""
     if len(source_clauses) >= 2:
         if len(source_words) <= 5:
-            return target_units < len(source_clauses) * 2
+            return "short multi-clause subtitle is too compressed" if target_units < len(source_clauses) * 2 else ""
         short_dialogue_minimum = max(5, int(len(source_words) * 0.60 + 0.999))
         if target_units < short_dialogue_minimum:
-            return True
+            return "multi-clause subtitle is too compressed"
     if len(source_words) < 8:
-        return False
+        return ""
     minimum_units = max(5, int(len(source_words) * 0.35 + 0.999))
-    return target_units < minimum_units
+    return "translation is too short for the source length" if target_units < minimum_units else ""
+
+
+def translation_may_omit_content(source, translation):
+    """Detect a long source sentence collapsed into an implausibly short translation."""
+    return bool(_translation_omission_reason(source, translation))
+
+
+def _preview_text(text, limit=100):
+    text = re.sub(r"\s+", " ", str(text)).strip()
+    return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
 def _retry_incomplete_translation(source, translation, target_language, glossary_terms):
-    if not translation_may_omit_content(source, translation):
+    reason = _translation_omission_reason(source, translation)
+    if not reason:
         return translation
     console.print(
-        f"[yellow]⚠️ Translation may omit source content; retrying complete translation: "
-        f"{source[:80]}[/yellow]"
+        "[yellow]⚠️ Translation may omit source content; retrying complete translation "
+        f"({reason}). Source: {_preview_text(source)} | Target: {_preview_text(translation)}[/yellow]"
     )
     terms = _format_line_terms(source, glossary_terms)
     terms_block = (
@@ -318,6 +328,22 @@ def _retry_incomplete_translation(source, translation, target_language, glossary
         if candidate and not _contains_prompt_pollution(candidate) and not translation_may_omit_content(source, candidate):
             return candidate
     raise ValueError(f"Translation omitted source content after retry: {source}")
+
+
+def _finalize_translations_after_refine(source_lines, refined_translations, raw_translations, target_language, glossary_terms):
+    final_translations = []
+    for source, refined, raw in zip(source_lines, refined_translations, raw_translations):
+        refined_reason = _translation_omission_reason(source, refined)
+        if refined_reason and raw and not _contains_prompt_pollution(raw) and not translation_may_omit_content(source, raw):
+            console.print(
+                "[yellow]⚠️ Workflow refinement may omit source content; keeping translator output "
+                f"({refined_reason}). Source: {_preview_text(source)} | Refined: {_preview_text(refined)} | "
+                f"Translator: {_preview_text(raw)}[/yellow]"
+            )
+            final_translations.append(raw)
+            continue
+        final_translations.append(_retry_incomplete_translation(source, refined, target_language, glossary_terms))
+    return final_translations
 
 def _salvage_translator_output(text, line):
     text = _clean_translator_output(text)
@@ -645,6 +671,7 @@ def _translate_lines_with_translator(lines, things_to_note_prompt=None, summary_
     translations = translations[:len(source_lines)]
     while len(translations) < len(source_lines):
         translations.append("")
+    raw_translations = translations[:]
 
     table = Table(title="Translation Model Results", show_header=False, box=box.ROUNDED)
     table.add_column("Translations", style="bold")
@@ -678,10 +705,13 @@ def _translate_lines_with_translator(lines, things_to_note_prompt=None, summary_
             console.print(f'[yellow]⚠️ Ambiguity check for block {index} failed (non-fatal): {e}[/yellow]')
 
     final_translations = translate_result.split('\n')
-    final_translations = [
-        _retry_incomplete_translation(source, translation, target_language, glossary_terms)
-        for source, translation in zip(source_lines, final_translations)
-    ]
+    final_translations = _finalize_translations_after_refine(
+        source_lines,
+        final_translations,
+        raw_translations,
+        target_language,
+        glossary_terms,
+    )
     translate_result = "\n".join(final_translations)
 
     return translate_result, lines

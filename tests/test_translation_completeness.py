@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from core.translate_lines import translation_may_omit_content
+from core.translate_lines import _finalize_translations_after_refine, translation_may_omit_content
 
 
 class TranslationCompletenessTest(unittest.TestCase):
@@ -63,6 +64,17 @@ class TranslationCompletenessTest(unittest.TestCase):
                 "我是鲍勃·西蒙，不过录得不太顺利。",
             )
         )
+
+    def test_keeps_complete_translator_output_when_refine_omits_content(self):
+        source = "I'm Bob Simon. It didn't go perfectly though."
+        raw = "我是鲍勃·西蒙。不过事情并没有完美地进展。"
+        refined = "不过录得不太顺利"
+
+        with patch("core.translate_lines.console.print"):
+            self.assertEqual(
+                _finalize_translations_after_refine([source], [refined], [raw], "zh-CN", []),
+                [raw],
+            )
 
     def test_flags_repeated_self_intro_omission(self):
         self.assertTrue(
