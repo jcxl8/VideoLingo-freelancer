@@ -197,7 +197,13 @@ The pipeline should preserve existing bilingual structure when bilingual output 
 - `core/st_utils/manual_merge_files.py` supports controlled manual re-merge workflows.
 - Ambiguity checks, workflow refinement, and automatic proofread are separate switches and should be tested independently.
 
-Proofreading must preserve timing order and subtitle count unless a documented repair explicitly changes segmentation.
+Automatic subtitle proofreading must do more than produce a report. It should automatically repair deterministic alignment shifts, then report only the remaining issues that need review. Current high-confidence repairs include:
+
+- standalone `You know?` subtitles that received the following subtitle's non-question translation;
+- short self-introduction subtitles such as `I'm Anderson Cooper.` that received a count/tail phrase from the previous subtitle;
+- translation-completeness checks for omitted self-introductions, short questions, and count expressions, while avoiding false positives such as the `60` in `60 Minutes`.
+
+Proofreading must preserve timing order and subtitle count unless a documented repair explicitly changes segmentation. Auto-fixes must rewrite the canonical source/translation SRTs and both bilingual SRT variants together so downstream burn-in and manual merge use the same text.
 
 ### 7.5 Tasks, recovery, and atomic writes
 
@@ -300,9 +306,10 @@ Then verify:
 3. ASR selects the expected backend;
 4. translation and semantic models can be configured separately;
 5. portrait and landscape previews use independent settings;
-6. proofreading and retranslating do not restart unrelated completed stages;
-7. task state can resume after an intentional interruption;
-8. final subtitles and rendered video are written to runtime output, not the repository.
+6. automatic proofreading repairs deterministic subtitle shifts before writing the remaining report;
+7. proofreading and retranslating do not restart unrelated completed stages;
+8. task state can resume after an intentional interruption;
+9. final subtitles and rendered video are written to runtime output, not the repository.
 
 ## 10. CI and release hygiene
 
@@ -367,7 +374,7 @@ The migration or update is complete only when all of the following are true:
 - the target platform selects a supported ASR backend;
 - dual-model routing works with placeholder-free secrets supplied externally;
 - portrait and landscape layouts remain independent;
-- proofreading, retranslation, task recovery, and history helpers are available;
+- proofreading, automatic subtitle-shift repair, retranslation, task recovery, and history helpers are available;
 - security, validation, regression, syntax, and unit-test gates pass;
 - one short end-to-end job produces the expected subtitles and video.
 
