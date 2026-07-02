@@ -21,7 +21,7 @@ _CHINESE_SELF_INTRO_TAIL = re.compile(r"((?:我是|我叫|这里是).+)$")
 
 
 def _target_has_question_marker(text):
-    return bool(re.search(r"[？?吗呢]|什么|怎么|为什么|如何|谁|哪|是否|懂|知道|对吧|是吧", str(text)))
+    return bool(re.search(r"[？?吗呢]|什么|怎么|为什么|如何|谁|哪里|哪儿|哪个|哪些|哪种|哪位|哪边|哪一|是否|懂|知道|对吧|是吧", str(text)))
 
 
 def _seconds(parts):
@@ -61,6 +61,13 @@ def _parse_srt(path):
 
 def _normalise(text):
     return re.sub(r"\s+", " ", str(text)).strip()
+
+
+def _readable_units(text):
+    text = str(text)
+    cjk_units = len(re.findall(r"[\u3400-\u9fff]", text))
+    latin_word_units = len(re.findall(r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)?", text))
+    return cjk_units + latin_word_units
 
 
 def _format_seconds(seconds):
@@ -108,6 +115,16 @@ def _append_entry_text(entry, text):
     _set_entry_text(entry, _normalise(f"{current} {text}"))
 
 
+def _prepend_entry_text(entry, text):
+    text = _normalise(text)
+    if not text:
+        return
+    current = _normalise(entry["text"])
+    if text in current:
+        return
+    _set_entry_text(entry, _normalise(f"{text} {current}"))
+
+
 def _auto_fix_translation_alignment(source_entries, translation_entries):
     fixes = []
     limit = min(len(source_entries), len(translation_entries))
@@ -120,7 +137,7 @@ def _auto_fix_translation_alignment(source_entries, translation_entries):
             and not _target_has_question_marker(translation_text)
             and position + 1 < limit
         ):
-            _append_entry_text(translation_entries[position + 1], translation_text)
+            _prepend_entry_text(translation_entries[position + 1], translation_text)
             _set_entry_text(translation_entries[position], "你懂吧？")
             fixes.append({
                 "entry_index": translation_entries[position]["index"],
@@ -237,8 +254,7 @@ def proofread_subtitle_set(paths, report_json=None, report_md=None, auto_fix=Fal
         if _SUSPICIOUS_INLINE_ELLIPSIS.search(source_text):
             issues.append(_issue("asr_suspicion", "Unexpected ellipsis inside a source phrase; verify this passage against the audio.", entry=source, source=source_text, translation=translation_text))
         duration = max(translation["end"] - translation["start"], 0.001)
-        visible_characters = len(re.sub(r"\s+", "", translation_text))
-        if visible_characters / duration > 13:
+        if _readable_units(translation_text) / duration > 13:
             issues.append(_issue("translation_cps", "Translation reading speed exceeds 13 visible characters per second.", entry=translation, source=source_text, translation=translation_text))
         if translation_may_omit_content(source_text, translation_text):
             issues.append(_issue("translation_omission", "Translation may omit part of the source subtitle.", severity="error", entry=translation, source=source_text, translation=translation_text))

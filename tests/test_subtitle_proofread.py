@@ -167,7 +167,7 @@ class SubtitleProofreadTest(unittest.TestCase):
             self.assertIn("每条真正播出的 I'm 介绍 都得录上十次左右", trans_text)
             self.assertIn("我是安德森·库珀", trans_text)
             self.assertIn("你懂吧？", trans_text)
-            self.assertIn("感觉就是 天啊 第一次为《60 分钟》录音", trans_text)
+            self.assertIn("第一次为《60 分钟》录音 感觉就是 天啊", trans_text)
             self.assertIn("You know?\n你懂吧？", paths["src_trans"].read_text(encoding="utf-8"))
 
 

@@ -200,7 +200,7 @@ def _has_embedded_dialogue_question(source):
 
 
 def _target_has_question_marker(text):
-    return bool(re.search(r"[？?]|(?:哪|谁|什么|怎么|为什么|如何|是否|吗|呢)", str(text)))
+    return bool(re.search(r"[？?]|(?:谁|什么|怎么|为什么|如何|是否|吗|呢|哪里|哪儿|哪个|哪些|哪种|哪位|哪边|哪一)", str(text)))
 
 
 def _has_leading_affirmative_answer(source):
