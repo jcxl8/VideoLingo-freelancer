@@ -23,10 +23,15 @@ LEADING_ACK_TARGET_RE = re.compile(
 )
 
 
+def _target_language_is_chinese() -> bool:
+    target_language = str(load_key("target_language") or "").lower()
+    return any(marker in target_language for marker in ("zh", "中文", "汉语", "簡體", "繁體"))
+
+
 def _restore_leading_ack_translation(source: str, translation: str) -> str:
     source = str(source or "").strip()
     translation = str(translation or "").strip()
-    if not translation or not LEADING_ACK_SOURCE_RE.match(source):
+    if not translation or not LEADING_ACK_SOURCE_RE.match(source) or not _target_language_is_chinese():
         return translation
     if LEADING_ACK_TARGET_RE.match(translation):
         return translation

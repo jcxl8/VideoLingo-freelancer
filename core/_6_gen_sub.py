@@ -1111,6 +1111,33 @@ def _source_sentence_parts_for_display(source_text):
         return []
     return parts
 
+def _source_sentence_parts_for_timeline(source_text):
+    parts = _source_sentence_parts_for_display(source_text)
+    if len(parts) <= 1:
+        return []
+    if len(parts) == 2:
+        first = parts[0].strip()
+        second = parts[1].strip()
+        if re.search(r"\?\s*$", first) and not re.match(r"(?i)i\s+mean\b", second):
+            return parts
+        if re.search(r"[.!?]\s*$", first) and re.match(r"(?i)i\s+heard\b", second):
+            return parts
+        return []
+    return []
+
+def _source_clause_parts_for_display(source_text):
+    text = re.sub(r"\s+", " ", str(source_text or "").strip())
+    if not text:
+        return []
+
+    match = re.match(r"^(.+?,)\s+(and\b.+?)\s+(because\b.+)$", text, re.I)
+    if not match:
+        return []
+    parts = [match.group(1).strip(), match.group(2).strip(), match.group(3).strip()]
+    if any(_latin_word_count(part) < 3 for part in parts):
+        return []
+    return parts
+
 def _split_source_by_sentence_punctuation(source_text):
     text = re.sub(r"\s+", " ", str(source_text or "").strip())
     if not text:
@@ -1119,10 +1146,11 @@ def _split_source_by_sentence_punctuation(source_text):
     pieces = []
     last = 0
     for match in re.finditer(r"[.!?！？]+|,\s+(?=(?:how|what|why|where|when|who)\b)", text, re.I):
+        if match.group(0).lstrip().startswith(","):
+            leading_text = text[last:match.start()].strip()
+            if _latin_word_count(leading_text) > 5:
+                continue
         end = match.end()
-        leading_word_count = len(LATIN_WORD_RE.findall(text[last:match.start()]))
-        if match.group(0).lstrip().startswith(",") and leading_word_count > 5:
-            continue
         piece = text[last:end].strip()
         if piece:
             pieces.append(piece)
@@ -1137,15 +1165,19 @@ def _split_repeated_parallel_markers(text, markers):
     if not text:
         return []
 
-    marker_positions = []
+    best_marker = None
+    best_matches = []
     for marker in markers:
-        matches = list(re.finditer(rf"\b{re.escape(marker)}\b", text, re.I))
-        if len(matches) >= 2:
-            marker_positions.extend(match.start() for match in matches[1:])
-    if not marker_positions:
+        pattern = re.compile(rf"\b{re.escape(marker)}\b", re.I)
+        matches = list(pattern.finditer(text))
+        if len(matches) >= 2 and (not best_matches or matches[1].start() < best_matches[1].start()):
+            best_marker = marker
+            best_matches = matches
+
+    if not best_marker:
         return [text]
 
-    boundaries = [0] + sorted(set(marker_positions)) + [len(text)]
+    boundaries = [0] + [match.start() for match in best_matches[1:]] + [len(text)]
     parts = [
         text[boundaries[index]:boundaries[index + 1]].strip(" ,，")
         for index in range(len(boundaries) - 1)
@@ -1191,10 +1223,30 @@ def _translation_parts_matching_source(translation, part_count):
         return []
     parts = _split_translation_by_sentence_boundaries(translation)
     if len(parts) < part_count:
+        expanded_parts = []
+        for part in parts:
+            split_parts = _split_translation_clause_markers(part)
+            expanded_parts.extend(split_parts or [part])
+        parts = expanded_parts
+    if len(parts) < part_count:
         return []
     if len(parts) > part_count:
         parts = _merge_source_parts_to_count(parts, part_count)
     return parts if len(parts) == part_count else []
+
+def _split_translation_clause_markers(translation):
+    text = re.sub(r"\s+", " ", str(translation or "").strip())
+    if not text:
+        return []
+    parts = [text]
+    for marker in ("porque", "because"):
+        expanded = []
+        pattern = re.compile(rf"\s+(?={re.escape(marker)}\b)", re.I)
+        for part in parts:
+            split_parts = [item.strip(" ，,。；;：:、") for item in pattern.split(part, maxsplit=1)]
+            expanded.extend([item for item in split_parts if item])
+        parts = expanded
+    return parts
 
 def _merge_source_parts_to_count(parts, part_count):
     parts = [part.strip() for part in parts if part and part.strip()]
@@ -1283,6 +1335,44 @@ def _split_time_span(start, end, weights):
         boundaries.append(start + elapsed)
     boundaries.append(end)
     return [(boundaries[index], boundaries[index + 1]) for index in range(len(weights))]
+
+def _word_anchor_spans_for_parts(row, source_parts, display_timestamp, speech_timestamp, df_words):
+    if df_words is None:
+        return None
+    try:
+        start_idx = int(row.get("start_word_idx"))
+        end_idx = int(row.get("end_word_idx"))
+    except (TypeError, ValueError):
+        return None
+    if start_idx < 0 or end_idx < start_idx or end_idx >= len(df_words):
+        return None
+
+    part_word_counts = [_latin_word_count(part) for part in source_parts]
+    if not part_word_counts or sum(part_word_counts) != end_idx - start_idx + 1:
+        return None
+
+    word_ranges = []
+    current_idx = start_idx
+    for count in part_word_counts:
+        part_start = current_idx
+        part_end = current_idx + count - 1
+        word_ranges.append((part_start, part_end))
+        current_idx = part_end + 1
+
+    speech_spans = []
+    display_spans = []
+    for index, (part_start, part_end) in enumerate(word_ranges):
+        speech_start = float(df_words["start"].iloc[part_start])
+        speech_end = _effective_word_end(df_words, part_start, part_end)
+        display_start = float(display_timestamp[0]) if index == 0 else speech_start
+        if index + 1 < len(word_ranges):
+            next_start = float(df_words["start"].iloc[word_ranges[index + 1][0]])
+            display_end = next_start
+        else:
+            display_end = float(display_timestamp[1])
+        speech_spans.append((speech_start, speech_end))
+        display_spans.append((display_start, display_end))
+    return word_ranges, speech_spans, display_spans
 
 def _contains_cjk(text):
     return bool(re.search(r"[\u3400-\u9fff]", str(text or "")))
@@ -1390,7 +1480,7 @@ def _should_split_long_display_subtitle(translation, display_timestamp, target_w
 
     return []
 
-def _split_long_display_subtitles(df_trans_time, target_width=None, target_height=None):
+def _split_long_display_subtitles(df_trans_time, target_width=None, target_height=None, df_words=None):
     if df_trans_time.empty or not target_width or not target_height:
         return df_trans_time
 
@@ -1421,6 +1511,22 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
             )
             if not trans_parts:
                 source_parts = []
+        if not trans_parts and duration >= 5.0:
+            source_parts = _source_clause_parts_for_display(row.get("Source", ""))
+            trans_parts = _translation_parts_matching_source(
+                row.get("Translation", ""),
+                len(source_parts),
+            )
+            if not trans_parts:
+                source_parts = []
+        if not trans_parts and duration >= 2.4:
+            source_parts = _source_sentence_parts_for_timeline(row.get("Source", ""))
+            trans_parts = _translation_parts_matching_source(
+                row.get("Translation", ""),
+                len(source_parts),
+            )
+            if not trans_parts:
+                source_parts = []
         if not trans_parts:
             rows.append(row.to_dict())
             continue
@@ -1431,13 +1537,20 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
             max(_text_weight(source_parts[index]), _text_weight(trans_parts[index]))
             for index in range(len(trans_parts))
         ]
-        display_spans = _split_time_span(display_timestamp[0], display_timestamp[1], weights)
         speech_timestamp = row.get("speech_timestamp", display_timestamp)
-        speech_spans = (
-            _split_time_span(speech_timestamp[0], speech_timestamp[1], weights)
-            if isinstance(speech_timestamp, tuple) and len(speech_timestamp) == 2
-            else display_spans
+        anchored_spans = _word_anchor_spans_for_parts(
+            row, source_parts, display_timestamp, speech_timestamp, df_words
         )
+        if anchored_spans:
+            word_ranges, speech_spans, display_spans = anchored_spans
+        else:
+            word_ranges = []
+            display_spans = _split_time_span(display_timestamp[0], display_timestamp[1], weights)
+            speech_spans = (
+                _split_time_span(speech_timestamp[0], speech_timestamp[1], weights)
+                if isinstance(speech_timestamp, tuple) and len(speech_timestamp) == 2
+                else display_spans
+            )
 
         for part_index, trans_part in enumerate(trans_parts):
             new_row = row.to_dict()
@@ -1445,11 +1558,87 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
             new_row["Translation"] = trans_part
             new_row["display_timestamp"] = display_spans[part_index]
             new_row["speech_timestamp"] = speech_spans[part_index]
+            if word_ranges:
+                part_start, part_end = word_ranges[part_index]
+                new_row["start_word_idx"] = part_start
+                new_row["end_word_idx"] = part_end
+                new_row["start_word"] = str(df_words["text"].iloc[part_start])
+                new_row["end_word"] = str(df_words["text"].iloc[part_end])
             rows.append(new_row)
         split_count += 1
 
     if split_count:
         console.print(f"[blue]ℹ️ Split {split_count} long subtitle(s) into multiple timed SRT entries before export.[/blue]")
+    return pd.DataFrame(rows).reset_index(drop=True)
+
+def _repair_leading_sentence_continuations(df_trans_time, df_words=None):
+    if df_trans_time.empty or "Source" not in df_trans_time.columns:
+        return df_trans_time
+
+    rows = [row.to_dict() for _, row in df_trans_time.iterrows()]
+    repaired_count = 0
+    index = 0
+    while index < len(rows) - 1:
+        current = rows[index]
+        next_row = rows[index + 1]
+        current_source = str(current.get("Source", "") or "").strip()
+        next_source = str(next_row.get("Source", "") or "").strip()
+        if not current_source or not next_source or re.search(r"[.!?]\s*$", current_source):
+            index += 1
+            continue
+
+        next_parts = _split_source_by_sentence_punctuation(next_source)
+        if len(next_parts) < 2 or not next_parts[0][:1].islower():
+            index += 1
+            continue
+
+        moved_source = next_parts[0]
+        remaining_source = " ".join(next_parts[1:]).strip()
+        trans_parts = _split_translation_by_sentence_boundaries(next_row.get("Translation", ""))
+        if len(trans_parts) < 2:
+            index += 1
+            continue
+        moved_translation = trans_parts[0]
+        remaining_translation = " ".join(trans_parts[1:]).strip()
+
+        try:
+            next_start_idx = int(next_row.get("start_word_idx"))
+            moved_word_count = _latin_word_count(moved_source)
+            moved_end_idx = next_start_idx + moved_word_count - 1
+            remaining_start_idx = moved_end_idx + 1
+            next_end_idx = int(next_row.get("end_word_idx"))
+        except (TypeError, ValueError):
+            next_start_idx = moved_end_idx = remaining_start_idx = next_end_idx = None
+
+        current["Source"] = _join_source_text(current_source, moved_source)
+        current["Translation"] = _join_translation_text(current.get("Translation", ""), moved_translation)
+        next_row["Source"] = remaining_source
+        next_row["Translation"] = remaining_translation
+
+        if df_words is not None and moved_end_idx is not None and remaining_start_idx <= next_end_idx:
+            current["end_word_idx"] = moved_end_idx
+            current["end_word"] = str(df_words["text"].iloc[moved_end_idx])
+            next_row["start_word_idx"] = remaining_start_idx
+            next_row["start_word"] = str(df_words["text"].iloc[remaining_start_idx])
+            current["speech_timestamp"] = (
+                float(current["speech_timestamp"][0]),
+                _effective_word_end(df_words, int(current.get("start_word_idx", moved_end_idx)), moved_end_idx),
+            )
+            next_row["speech_timestamp"] = (
+                float(df_words["start"].iloc[remaining_start_idx]),
+                float(next_row["speech_timestamp"][1]),
+            )
+            boundary = float(df_words["start"].iloc[remaining_start_idx])
+            current["display_timestamp"] = (float(current["display_timestamp"][0]), boundary)
+            next_row["display_timestamp"] = (boundary, float(next_row["display_timestamp"][1]))
+            current["speech_duration"] = current["speech_timestamp"][1] - current["speech_timestamp"][0]
+            next_row["speech_duration"] = next_row["speech_timestamp"][1] - next_row["speech_timestamp"][0]
+
+        repaired_count += 1
+        index += 2
+
+    if repaired_count:
+        console.print(f"[blue]ℹ️ Repaired {repaired_count} leading sentence continuation(s) before SRT export.[/blue]")
     return pd.DataFrame(rows).reset_index(drop=True)
 
 def _repair_adjacent_source_phrase_splits(df_trans_time):
@@ -1468,6 +1657,14 @@ def _repair_adjacent_source_phrase_splits(df_trans_time):
                 str(df_trans_time.iloc[index + offset].get("Source", "")).strip()
                 for offset in range(window_size)
             ]
+            if any(
+                pd.notna(df_trans_time.iloc[index + offset].get("start_word_idx"))
+                or pd.notna(df_trans_time.iloc[index + offset].get("end_word_idx"))
+                for offset in range(window_size)
+            ):
+                index += window_size
+                repaired = True
+                break
             if any(not value for value in source_values):
                 continue
             if re.search(r"[.!?]\s*$", source_values[0]):
@@ -1541,7 +1738,8 @@ def align_timestamp(
     if write_timing_report:
         _write_subtitle_timing_report(timing_report_items)
     if for_display and output_dir == _OUTPUT_DIR:
-        df_trans_time = _split_long_display_subtitles(df_trans_time, target_width, target_height)
+        df_trans_time = _repair_leading_sentence_continuations(df_trans_time, df_text)
+        df_trans_time = _split_long_display_subtitles(df_trans_time, target_width, target_height, df_text)
     if for_display:
         df_trans_time = _repair_adjacent_source_phrase_splits(df_trans_time)
 
@@ -1624,24 +1822,22 @@ def align_timestamp(
             if not en_next or not en_next[0].islower():
                 continue
 
-            # Fix short orphan words at entry boundaries (for example,
-            # "...month he" / "kept calling..."). If EN_i ends with a very
-            # short lowercase word and EN_next starts lowercase, pull the
-            # orphan word into EN_next. Only apply when EN_i keeps enough words.
+            # Fix short orphan words at entry boundary (e.g. "...month he" / "kept calling...")
+            # If EN_i ends with a very short lowercase word and EN_next starts
+            # with lowercase, pull the orphan word into EN_next.
+            # Only applies when EN_i still has ≥ 3 words after removal.
             en_words_i = en_i.split()
-            if (
-                len(en_words_i) >= 4
-                and en_words_i[-1].islower()
-                and len(en_words_i[-1]) <= 3
-                and en_next
-                and en_next[0].islower()
-            ):
+            if (len(en_words_i) >= 4
+                    and en_words_i[-1].islower()
+                    and len(en_words_i[-1]) <= 3
+                    and en_next
+                    and en_next[0].islower()):
                 orphan = en_words_i[-1]
-                en_i_new = " ".join(en_words_i[:-1]).strip().rstrip(",")
-                en_next_new = (orphan + " " + en_next).strip()
+                en_i_new = ' '.join(en_words_i[:-1]).strip().rstrip(',')
+                en_next_new = (orphan + ' ' + en_next).strip()
                 if en_i_new and en_next_new:
-                    parsed[i]["en"] = en_i_new
-                    parsed[i + 1]["en"] = en_next_new
+                    parsed[i]['en'] = en_i_new
+                    parsed[i+1]['en'] = en_next_new
                     fixed += 1
                     continue
 
@@ -1673,7 +1869,7 @@ def align_timestamp(
                     break
 
             # Avoid breaking multi-word proper nouns across entries
-            # (for example "Hong | Kong", "San | Francisco", "New | York").
+            # (e.g. "Hong | Kong", "San | Francisco", "New | York")
             if 0 < split_at < len(words):
                 w_prev = words[split_at - 1]
                 w_next = words[split_at]
@@ -1724,9 +1920,6 @@ def align_timestamp(
         os.makedirs(output_dir, exist_ok=True)
         for filename, columns in subtitle_output_configs:
             subtitle_str = generate_subtitle_string(df_trans_time, columns)
-            # Align English splits with Chinese boundaries for bilingual files
-            if len(columns) == 2:
-                subtitle_str = _align_bilingual_english(subtitle_str)
             with open(os.path.join(output_dir, filename), 'w', encoding='utf-8') as f:
                 f.write(subtitle_str)
 

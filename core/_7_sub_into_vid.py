@@ -73,7 +73,7 @@ HARDSUB_AUTO_MIN_WIDTH_RATIO = 0.25
 HARDSUB_AUTO_MAX_CENTER_OFFSET = 0.22
 HARDSUB_AUTO_MAX_HEIGHT_RATIO = 0.18
 HARDSUB_AUTO_MAX_BOTTOM_RATIO = 0.95
-SUBTITLE_STYLE_VERSION = 19
+SUBTITLE_STYLE_VERSION = 21
 PORTRAIT_SRC_MIN_SINGLE_LINE_FONT_SIZE = 26
 PORTRAIT_SRC_MIN_SINGLE_LINE_SCALE_X = 96
 PORTRAIT_SRC_WRAP_FONT_RATIO = 0.90
@@ -96,14 +96,6 @@ def landscape_watermark_effective_gap(offset=None):
 # Watermark
 WATERMARK_TEXT = 'AI 词级视频译制'
 WATERMARK_OPACITY = 0.30
-
-
-def _watermark_text():
-    try:
-        configured = str(load_key("watermark_text") or "").strip()
-    except Exception:
-        configured = ""
-    return configured or WATERMARK_TEXT
 
 if platform.system() == 'Linux':
     WATERMARK_FONT_FILE = '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'
@@ -304,9 +296,12 @@ def _effective_watermark_offset(layout=SUBTITLE_LAYOUT_LANDSCAPE):
     )
 
 def _portrait_hardsub_placement():
-    """Return the portrait hard-sub translation placement preference."""
-    placement = str(_safe_load_key("portrait_hardsub_placement", "auto") or "auto")
-    return placement if placement in ("auto", "above", "below") else "auto"
+    """Return the hard-sub translation placement preference.
+
+    Values: "auto" (smart), "above" (always above), "below" (always below).
+    """
+    return str(_safe_load_key("portrait_hardsub_placement", "auto") or "auto")
+
 
 def _is_portrait_video(target_width, target_height):
     return target_height > 0 and target_width > 0 and (target_height / target_width) >= PORTRAIT_RATIO_THRESHOLD
@@ -753,6 +748,7 @@ def _subtitle_break_penalty(left, right, font_size):
         "up and down", "jumping up", "down at", "tour the", "the lab",
         "meet the", "of the", "in the", "on the", "at the",
         "to the", "for the", "with the", "from the",
+        "i mean",
     }
     if bridge2 in protected_phrases or bridge3 in protected_phrases or bridge4 in protected_phrases:
         penalty += 5200
@@ -815,6 +811,39 @@ def _wrap_subtitle_lines_balanced(text, target_width, font_size, margin_h, max_l
     _, _, left, right = min(candidates, key=lambda item: item[0])
     return [left, right]
 
+def _avoid_final_single_word_line(lines, font_size, max_width):
+    lines = [str(line or "").strip() for line in lines if str(line or "").strip()]
+    if len(lines) < 2 or _word_count(lines[-1]) != 1:
+        return lines
+
+    previous_words = lines[-2].split()
+    if len(previous_words) <= 1:
+        return lines
+
+    borrowed = previous_words[-1]
+    new_previous = " ".join(previous_words[:-1]).strip()
+    new_last = f"{borrowed} {lines[-1]}".strip()
+    if (
+        new_previous
+        and _estimate_text_width_px(new_previous, font_size) <= max_width
+        and _estimate_text_width_px(new_last, font_size) <= max_width
+    ):
+        lines[-2] = new_previous
+        lines[-1] = new_last
+    return lines
+
+def _semantic_source_clause_lines_for_ass(text, font_size, max_width):
+    text = re.sub(r"\s+", " ", str(text or "").strip())
+    match = re.match(r"^(.+?,)\s+(and\b.+?)\s+(because\b.+)$", text, re.I)
+    if not match:
+        return []
+    lines = [match.group(1).strip(), match.group(2).strip(), match.group(3).strip()]
+    if any(_word_count(line) < 3 for line in lines):
+        return []
+    if all(_estimate_text_width_px(line, font_size) <= max_width for line in lines):
+        return lines
+    return []
+
 def _wrap_subtitle_lines(text, target_width, font_size, margin_h, max_lines=2):
     text = re.sub(r"\s+", " ", str(text or "").strip())
     if not text:
@@ -826,7 +855,7 @@ def _wrap_subtitle_lines(text, target_width, font_size, margin_h, max_lines=2):
 
     balanced_lines = _wrap_subtitle_lines_balanced(text, target_width, font_size, margin_h, max_lines=max_lines)
     if balanced_lines:
-        return balanced_lines
+        return _avoid_final_single_word_line(balanced_lines, font_size, max_width)
 
     tokens = text.split(" ")
     lines = []
@@ -856,16 +885,16 @@ def _wrap_subtitle_lines(text, target_width, font_size, margin_h, max_lines=2):
         lines.append(current)
 
     if len(lines) <= max_lines:
-        return lines
+        return _avoid_final_single_word_line(lines, font_size, max_width)
 
     overflow_line = " ".join(lines[max_lines - 1:])
     if _estimate_text_width_px(overflow_line, font_size) <= max_width:
-        return lines[:max_lines - 1] + [overflow_line]
+        return _avoid_final_single_word_line(lines[:max_lines - 1] + [overflow_line], font_size, max_width)
 
     # Do not rejoin CJK or other long text into an over-wide final ASS line.
     # Keeping an extra line is much less damaging than rendering text outside
     # the video frame during burn-in.
-    return lines
+    return _avoid_final_single_word_line(lines, font_size, max_width)
 
 def _ass_text_from_lines(lines):
     escaped = []
@@ -915,6 +944,11 @@ def _wrap_source_subtitle_for_ass(text, target_width, font_size, margin_h, max_l
         font_size,
         max(PORTRAIT_SRC_MIN_SINGLE_LINE_FONT_SIZE, int(round(font_size * PORTRAIT_SRC_WRAP_FONT_RATIO))),
     )
+    semantic_lines = _semantic_source_clause_lines_for_ass(text, wrap_font_size, max_width)
+    if semantic_lines:
+        override_size = wrap_font_size if wrap_font_size != font_size else None
+        return _ass_text_with_inline_style(semantic_lines, font_size=override_size), len(semantic_lines)
+
     lines = _wrap_subtitle_lines(text, target_width, wrap_font_size, margin_h, max_lines=max_lines)
     override_size = wrap_font_size if wrap_font_size != font_size else None
     return _ass_text_with_inline_style(lines, font_size=override_size), len(lines)
@@ -1759,7 +1793,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         )
         lines.append(
             f"Dialogue: 0,{_ass_timestamp(start)},{_ass_timestamp(end)},Watermark,,0,0,0,,"
-            f"{{\\an2\\pos({center_x},{watermark_bottom})}}{_watermark_text()}\n"
+            f"{{\\an2\\pos({center_x},{watermark_bottom})}}{WATERMARK_TEXT}\n"
         )
     with open(ass_path, "w", encoding="utf-8") as file:
         file.writelines(lines)
@@ -1846,7 +1880,7 @@ def _watermark_drawtext_filter(
     elif source_hardsub_box and layout == SUBTITLE_LAYOUT_PORTRAIT and target_width:
         base_y = int(_hardsub_translation_geometry(source_hardsub_box, target_width, target_height)["watermark_y"])
     elif layout == SUBTITLE_LAYOUT_PORTRAIT:
-        base_y = int(round(target_height * 0.65)) + _effective_watermark_offset(layout=layout)
+        base_y = int(round(target_height * 0.65)) - _effective_watermark_offset(layout=layout)
     else:
         wm_font_size = max(10, _safe_int_key("landscape_watermark_font_size", 27))
         if landscape_subtitle_top_y is not None:
@@ -1865,7 +1899,7 @@ def _watermark_drawtext_filter(
     watermark_y_value = watermark_y_expression or str(watermark_y)
     font_color = f'white@{WATERMARK_OPACITY}'
     return (
-        f"drawtext=text='{_watermark_text()}':"
+        f"drawtext=text='{WATERMARK_TEXT}':"
         f"fontsize={wm_font_size}:"
         f"fontcolor={font_color}:"
         f"fontfile={WATERMARK_FONT_FILE}:"
@@ -1915,7 +1949,7 @@ def _video_filter_for_subtitles(target_width, target_height, src_srt=None, trans
         f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease",
         f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2",
     ]
-    if watermark_enabled and (_is_bilingual_mode(subtitle_mode) or source_hardsub_box):
+    if watermark_enabled:
         if layout == SUBTITLE_LAYOUT_LANDSCAPE and _is_bilingual_mode(subtitle_mode):
             filters.append(
                 f"subtitles={_create_landscape_watermark_ass(src_srt, trans_srt, target_width, target_height)}"
