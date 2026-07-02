@@ -82,6 +82,159 @@ class LongSubtitleTimelineSplitTest(unittest.TestCase):
         ])
         self.assertEqual(result["display_timestamp"].tolist(), [(415.09, 419.25), (419.25, 425.34)])
 
+    def test_but_clause_splits_hoodie_sentence_on_word_anchor(self):
+        words = [
+            ("He", 764.58, 764.96),
+            ("might", 764.96, 765.20),
+            ("still", 765.20, 765.50),
+            ("wear", 765.50, 765.74),
+            ("a", 765.74, 765.92),
+            ("hoodie", 765.92, 766.16),
+            ("and", 766.16, 766.48),
+            ("no", 766.48, 766.64),
+            ("socks,", 766.64, 767.06),
+            ("but", 767.36, 767.88),
+            ("he's", 767.88, 768.12),
+            ("becoming", 768.12, 768.54),
+            ("a", 768.54, 768.80),
+            ("suit", 768.80, 769.16),
+            ("as", 769.16, 769.92),
+            ("he", 769.92, 770.04),
+            ("ponders", 770.04, 770.58),
+            ("whether", 770.58, 770.90),
+            ("to", 770.90, 771.14),
+            ("take", 771.14, 771.40),
+            ("his", 771.40, 771.56),
+            ("company", 771.56, 771.86),
+            ("public", 771.86, 772.36),
+            ("this", 772.36, 772.88),
+            ("year.", 772.88, 773.18),
+        ]
+        df_words = pd.DataFrame(words, columns=["text", "start", "end"])
+        df = pd.DataFrame([{
+            "Source": "He might still wear a hoodie and no socks, but he's becoming a suit as he ponders whether to take his company public this year.",
+            "Translation": "他可能还穿着连帽衫，不穿袜子，但已初具高管风范， 他正考虑是否今年让公司上市",
+            "start_word_idx": 0,
+            "end_word_idx": 24,
+            "start_word": "He",
+            "end_word": "year.",
+            "speech_timestamp": (764.58, 773.18),
+            "display_timestamp": (764.58, 773.43),
+            "speech_duration": 8.6,
+            "duration": 8.85,
+        }])
+
+        result = _split_long_display_subtitles(df, 1920, 1080, df_words)
+
+        self.assertEqual(result["Translation"].tolist(), [
+            "他可能还穿着连帽衫 不穿袜子",
+            "但已初具高管风范 他正考虑是否今年让公司上市",
+        ])
+        self.assertEqual(result["display_timestamp"].tolist(), [(764.58, 767.36), (767.36, 773.43)])
+
+    def test_but_clause_splits_age_experience_sentence_on_word_anchor(self):
+        words = [
+            ("There", 793.38, 793.86),
+            ("are", 793.86, 794.82),
+            ("definitely", 794.82, 795.04),
+            ("elements", 795.04, 795.42),
+            ("of", 795.42, 795.76),
+            ("experience", 795.76, 796.38),
+            ("and", 796.38, 796.90),
+            ("stuff", 796.90, 797.24),
+            ("that", 797.24, 797.56),
+            ("someone", 797.56, 798.38),
+            ("who's", 798.38, 798.98),
+            ("my", 798.98, 799.10),
+            ("age", 799.10, 799.28),
+            ("wouldn't", 799.28, 799.60),
+            ("have,", 799.60, 799.82),
+            ("but", 800.00, 800.26),
+            ("there", 800.26, 800.44),
+            ("are", 800.44, 800.54),
+            ("also", 800.54, 800.74),
+            ("things", 800.74, 800.96),
+            ("that", 800.96, 801.28),
+            ("I", 801.28, 801.62),
+            ("can", 801.62, 801.78),
+            ("do", 801.78, 801.98),
+            ("that", 801.98, 802.26),
+            ("other", 802.26, 802.56),
+            ("people", 802.56, 802.88),
+            ("wouldn't", 802.88, 803.30),
+            ("necessarily", 803.30, 803.56),
+            ("be", 803.56, 803.84),
+            ("able", 803.84, 804.02),
+            ("to.", 804.02, 804.18),
+        ]
+        df_words = pd.DataFrame(words, columns=["text", "start", "end"])
+        df = pd.DataFrame([{
+            "Source": "There are definitely elements of experience and stuff that someone who's my age wouldn't have, but there are also things that I can do that other people wouldn't necessarily be able to.",
+            "Translation": "我这个年纪的人肯定缺少一些经验 但也有一些事情我能做，别人却未必能做到",
+            "start_word_idx": 0,
+            "end_word_idx": 31,
+            "start_word": "There",
+            "end_word": "to.",
+            "speech_timestamp": (793.38, 804.18),
+            "display_timestamp": (793.38, 804.43),
+            "speech_duration": 10.8,
+            "duration": 11.05,
+        }])
+
+        result = _split_long_display_subtitles(df, 1920, 1080, df_words)
+
+        self.assertEqual(result["Translation"].tolist(), [
+            "我这个年纪的人肯定缺少一些经验",
+            "但也有一些事情我能做 别人却未必能做到",
+        ])
+        self.assertEqual(result["display_timestamp"].tolist(), [(793.38, 800.00), (800.00, 804.43)])
+
+    def test_ellipsis_question_answer_splits_into_three_semantic_rows(self):
+        words = [
+            ("So", 588.85, 588.85),
+            ("it", 588.85, 589.23),
+            ("would", 589.23, 589.35),
+            ("go", 589.35, 589.61),
+            ("to...", 589.61, 589.69),
+            ("But", 589.69, 589.69),
+            ("with", 589.69, 589.69),
+            ("me", 589.69, 589.73),
+            ("in", 589.73, 589.99),
+            ("the", 589.99, 590.01),
+            ("ad?", 590.01, 590.27),
+            ("Yeah,", 590.57, 590.91),
+            ("but", 590.95, 591.03),
+            ("that", 591.03, 591.17),
+            ("would", 591.17, 591.41),
+            ("basically", 591.41, 591.77),
+            ("be", 591.77, 592.01),
+            ("the", 592.01, 592.21),
+            ("ad.", 592.21, 592.39),
+        ]
+        df_words = pd.DataFrame(words, columns=["text", "start", "end"])
+        df = pd.DataFrame([{
+            "Source": "So it would go to... But with me in the ad? Yeah, but that would basically be the ad.",
+            "Translation": "它会发送，我会出现吗？那就是广告。",
+            "start_word_idx": 0,
+            "end_word_idx": 18,
+            "start_word": "So",
+            "end_word": "ad.",
+            "speech_timestamp": (588.85, 592.39),
+            "display_timestamp": (588.85, 592.65),
+            "speech_duration": 3.54,
+            "duration": 3.80,
+        }])
+
+        result = _split_long_display_subtitles(df, 1920, 1080, df_words)
+
+        self.assertEqual(result["Source"].tolist(), [
+            "So it would go to...",
+            "But with me in the ad?",
+            "Yeah, but that would basically be the ad.",
+        ])
+        self.assertEqual(result["Translation"].tolist(), ["它会发送", "我会出现吗？", "那就是广告"])
+        self.assertEqual(result["display_timestamp"].tolist(), [(588.85, 589.69), (589.69, 590.57), (590.57, 592.65)])
+
     def test_leading_60_minutes_rewind_title_splits_from_question(self):
         df_words = pd.DataFrame(
             [

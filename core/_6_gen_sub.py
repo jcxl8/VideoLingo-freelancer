@@ -1113,6 +1113,13 @@ def _restore_missing_source_question_boundaries(source_text):
 
 def _source_sentence_parts_for_display(source_text):
     source_text = _restore_missing_source_question_boundaries(source_text)
+    ellipsis_question_answer = re.match(r"^(.+?\.\.\.)\s+(But\b.+?\?)\s+(Yeah,\s+but\b.+)$", source_text, re.I)
+    if ellipsis_question_answer:
+        return [
+            ellipsis_question_answer.group(1).strip(),
+            ellipsis_question_answer.group(2).strip(),
+            ellipsis_question_answer.group(3).strip(),
+        ]
     parts = []
     for part in _split_source_by_sentence_punctuation(source_text):
         parts.extend(_split_repeated_parallel_markers(part, ("how much", "what")))
@@ -1132,6 +1139,13 @@ def _source_sentence_parts_for_timeline(source_text):
         if re.search(r"[.!?]\s*$", first) and re.match(r"(?i)i\s+heard\b", second):
             return parts
         return []
+    if (
+        len(parts) == 3
+        and re.search(r"\.\.\.\s*$", parts[0].strip())
+        and re.search(r"\?\s*$", parts[1].strip())
+        and re.match(r"(?i)yeah,\s+but\b", parts[2].strip())
+    ):
+        return parts
     return []
 
 def _source_clause_parts_for_display(source_text):
@@ -1146,6 +1160,9 @@ def _source_clause_parts_for_display(source_text):
             return []
         return parts
 
+    if _has_repeated_parallel_markers(text):
+        return []
+
     semantic_patterns = [
         r"^(.+?)\s+(and\s+among\s+them\b.+)$",
         r"^(.+?)\s+(and\s+now\b.+)$",
@@ -1155,6 +1172,7 @@ def _source_clause_parts_for_display(source_text):
         r"^(.+?)\s+(because\b.+)$",
         r"^(.+?)\s+(since\b.+)$",
         r"^(.+?)\s+(that\s+monitors\b.+)$",
+        r"^(.+?)\s+(but\b.+)$",
     ]
     for pattern in semantic_patterns:
         match = re.match(pattern, text, re.I)
@@ -1311,6 +1329,18 @@ def _translation_parts_matching_source(translation, part_count, source_parts=Non
             parts[2],
             " ".join(parts[3:]).strip(),
         ]
+    if (
+        len(parts) > part_count
+        and part_count == 2
+        and len(source_parts) == 2
+        and re.match(r"(?i)but\b", source_parts[1])
+    ):
+        for index, part in enumerate(parts[1:], 1):
+            if re.match(r"^(但|但是|不过|可是|却)", part):
+                return [
+                    " ".join(parts[:index]).strip(),
+                    " ".join(parts[index:]).strip(),
+                ]
     semantic_space_parts = _split_on_cjk_semantic_spaces(translation)
     if len(semantic_space_parts) == part_count:
         return semantic_space_parts
@@ -1608,7 +1638,7 @@ def _split_long_display_subtitles(df_trans_time, target_width=None, target_heigh
                 source_parts = source_sentence_parts
                 trans_parts = matched_trans_parts
         source_clause_parts = _source_clause_parts_for_display(row.get("Source", ""))
-        if source_clause_parts:
+        if source_clause_parts and not source_parts:
             matched_trans_parts = _translation_parts_matching_source(
                 row.get("Translation", ""),
                 len(source_clause_parts),
